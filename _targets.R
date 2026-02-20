@@ -1,178 +1,129 @@
 # ============================================================================
-# TARGETS PIPELINE
-# ============================================================================
-# Workflow-Orchestrierung für Budget & Hochrechnung PoC
-#
-# DAG:
-#   Input Files (v1) → Validate → Calculate → Output (CSV + Report Data)
-#
-# Verwendung:
-#   targets::tar_make()      # Führe Pipeline aus
-#   targets::tar_visnetwork() # Zeige DAG Visualisierung
+# TARGETS PIPELINE - Elegant mit versionierten Dateien
 # ============================================================================
 
 library(targets)
-library(tarchetypes)
+library(dplyr)
+library(readr)
+library(glue)
 
-# Lade Config & Funktionen
-source("R/00_config.R")
-source("R/01_load_data.R")
-source("R/02_validate_data.R")
+# Source helper functions
 source("R/03_calculate.R")
+source("R/02_validate_data.R")
 
 # ============================================================================
-# PIPELINE KONFIGURATION
+# HELPER FUNCTIONS
 # ============================================================================
 
-tar_option_set(
-  packages = c("dplyr", "readr"),
-  format = "rds"  # Caching Format
-)
+get_latest_input_files <- function() {
+  raw_files <- list.files("data/raw", pattern = "\\.csv$", full.names = TRUE)
+  
+  list(
+    hochrechnung = raw_files[grepl("Input_Hochrechnung", raw_files)] |> 
+      sort(by = file.info(...)$mtime) |> tail(1),
+    rabatt = raw_files[grepl("Input_Rabatt", raw_files)] |> 
+      sort(by = file.info(...)$mtime) |> tail(1),
+    betriebskosten = raw_files[grepl("Input_Betriebskosten", raw_files)] |> 
+      sort(by = file.info(...)$mtime) |> tail(1),
+    sap = raw_files[grepl("Input_SAP", raw_files)] |> 
+      sort(by = file.info(...)$mtime) |> tail(1)
+  )
+}
+
+needs_processing <- function(input_files) {
+  # Get max timestamp of ALL input files
+  max_input_time <- max(
+    file.info(input_files$hochrechnung)$mtime,
+    file.info(input_files$rabatt)$mtime,
+    file.info(input_files$betriebskosten)$mtime,
+    file.info(input_files$sap)$mtime
+  )
+  
+  # Get latest report timestamp (if exists)
+  latest_report <- list.files("data/processed", pattern = "results.csv", 
+                             recursive = TRUE, full.names = TRUE) |>
+    sort(decreasing = TRUE) |> head(1)
+  
+  if (length(latest_report) == 0) {
+    return(TRUE)  # No report exists, process
+  }
+  
+  report_time <- file.info(latest_report)$mtime
+  max_input_time > report_time  # TRUE if ANY input newer than report
+}
 
 # ============================================================================
-# TARGETS
+# PIPELINE
 # ============================================================================
 
 list(
-  
-  # ========================================================================
-  # 1. LOAD INPUT FILES (v1)
-  # ========================================================================
-  
-  tar_file(
-    name = file_hochrechnung,
-    path = "data/raw/Input_Hochrechnung_v1.csv",
-    deployment = "main"
-  ),
-  
-  tar_file(
-    name = file_rabatt,
-    path = "data/raw/Input_Rabatt_v1.csv",
-    deployment = "main"
-  ),
-  
-  tar_file(
-    name = file_betriebskosten,
-    path = "data/raw/Input_Betriebskosten_v1.csv",
-    deployment = "main"
-  ),
-  
-  tar_file(
-    name = file_sap,
-    path = "data/raw/Input_SAP_v1.csv",
-    deployment = "main"
-  ),
-  
-  # ========================================================================
-  # 2. LOAD & PARSE DATA
-  # ========================================================================
-  
+  # TARGET 1: Detect latest inputs by timestamp
   tar_target(
-    name = load_hochrechnung,
-    command = load_csv(file_hochrechnung, "hochrechnung"),
-    deployment = "main"
+    input_files,
+    get_latest_input_files()
   ),
   
+  # TARGET 2: Check if processing needed (ANY file newer than report)
   tar_target(
-    name = load_rabatt,
-    command = load_csv(file_rabatt, "rabatt"),
-    deployment = "main"
+    should_process,
+    needs_processing(input_files)
   ),
   
+  # TARGET 3: Load data (only if should_process = TRUE)
   tar_target(
-    name = load_betriebskosten,
-    command = load_csv(file_betriebskosten, "betriebskosten"),
-    deployment = "main"
-  ),
-  
-  tar_target(
-    name = load_sap,
-    command = load_csv(file_sap, "sap"),
-    deployment = "main"
-  ),
-  
-  # ========================================================================
-  # 3. COMBINE INPUTS
-  # ========================================================================
-  
-  tar_target(
-    name = combined_inputs,
-    command = list(
-      hochrechnung = load_hochrechnung,
-      rabatt = load_rabatt,
-      betriebskosten = load_betriebskosten,
-      sap = load_sap
-    ),
-    deployment = "main"
-  ),
-  
-  # ========================================================================
-  # 4. VALIDATE DATA
-  # ========================================================================
-  
-  tar_target(
-    name = validation_check,
-    command = {
-      result <- validate_all_inputs(combined_inputs)
+    data_loaded,
+    {
+      if (!should_process) return(NULL)
       
-      if (!result$is_valid_all) {
-        stop("Validierung fehlgeschlagen. Bitte überprüfen Sie die Input-Daten.")
+      list(
+        hochrechnung = read_csv(input_files$hochrechnung, show_col_types = FALSE),
+        rabatt = read_csv(input_files$rabatt, show_col_types = FALSE),
+        betriebskosten = read_csv(input_files$betriebskosten, show_col_types = FALSE),
+        sap = read_csv(input_files$sap, show_col_types = FALSE)
+      )
+    }
+  ),
+  
+  # TARGET 4: Validate using R/02_validate_data.R
+  tar_target(
+    validated,
+    {
+      if (is.null(data_loaded)) return(NULL)
+      
+      validation <- validate_all_inputs(data_loaded)
+      
+      if (!validation$success) {
+        stop("Validierung fehlgeschlagen:\n", 
+             paste(validation$errors, collapse = "\n"))
       }
       
-      result
-    },
-    deployment = "main"
+      data_loaded
+    }
   ),
   
-  # ========================================================================
-  # 5. CALCULATE BUDGET & KPIs
-  # ========================================================================
-  
+  # TARGET 5: Calculate
   tar_target(
-    name = calculation_result,
-    command = calculate_budget(combined_inputs),
-    deployment = "main"
+    results,
+    {
+      if (is.null(validated)) return(NULL)
+      calculate_budget(validated)
+    }
   ),
   
-  # ========================================================================
-  # 6. PREPARE SUMMARY
-  # ========================================================================
-  
+  # TARGET 6: Save
   tar_target(
-    name = summary_table,
-    command = prepare_summary(calculation_result),
-    deployment = "main"
-  ),
-  
-  # ========================================================================
-  # 7. SAVE OUTPUT
-  # ========================================================================
-  
-  tar_file(
-    name = output_csv,
-    command = {
-      dir.create(OUTPUT_DIR, showWarnings = FALSE)
-      output_path <- file.path(OUTPUT_DIR, 
-                              paste0("budget_result_", Sys.Date(), ".csv"))
-      readr::write_csv(summary_table, output_path)
-      output_path
-    },
-    deployment = "main"
-  ),
-  
-  # ========================================================================
-  # 8. PREPARE REPORT DATA
-  # ========================================================================
-  
-  tar_target(
-    name = report_data,
-    command = {
-      list(
-        summary = summary_table,
-        validation = validation_check,
-        timestamp = Sys.time()
-      )
-    },
-    deployment = "main"
+    output,
+    {
+      if (is.null(results)) return("Skipped (no update needed)")
+      
+      version <- format(Sys.time(), "%Y%m%d_%H%M%S")
+      output_dir <- glue("data/processed/v{version}")
+      dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+      
+      write_csv(results, glue("{output_dir}/results.csv"))
+      write_csv(prepare_summary(results), glue("{output_dir}/summary.csv"))
+      
+      glue("✅ Results saved to {output_dir}")
+    }
   )
 )

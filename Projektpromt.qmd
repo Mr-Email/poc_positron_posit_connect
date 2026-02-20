@@ -1,7 +1,0 @@
----
-title: "Untitled"
-format: html
----
-
-Lust auf ein bisschen Vibe-Codeing. Ich habe ein Projekt welches ich in ein paar Stunden beendet haben sollte. Wir werden ein Markdown verfassen mit den Projektzielen etc. Damit ist immer klar wo wir gerade stehen und fürs LLM für ein Lookup. Ebenfalls bitte ich dich zu chalangen und verbesserungsvorschläge zu erteilen. Sei Kritisch wir haben grüne wiese. 
-

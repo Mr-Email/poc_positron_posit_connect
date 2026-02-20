@@ -3,8 +3,8 @@
 ## Projektziel
 Pitch am Montag für Lösungsvorschlag zur Vereinfachung von Hochrechnungs- und Budget-Prozessen.
 - **Problem**: Manueller Excel-Austausch, ineffizient, nicht nachvollziehbar
-- **Lösung**: Automatisierte Pipeline (Shiny + targets) mit validierter Datenverarbeitung
-- **MVP**: Funktionsfähige targets-Pipeline + Quarto-Report + (optional) Shiny-App
+- **Lösung**: Automatisierte Pipeline (targets) mit validierter Datenverarbeitung
+- **MVP**: Funktionsfähige targets-Pipeline + Quarto-Report + validierte Kernfunktionen
 
 ---
 
@@ -38,7 +38,7 @@ CR = (va + bk) / vp                       # Combined Ratio (Ziel: 85-105%)
 ## Workflow & Use-Case
 
 ### Standard-Flow
-1. **v1 (Input)**: Stakeholder lädt 4 CSV-Dateien hoch
+1. **Input (v1)**: 4 CSV-Dateien vorhanden
 2. **Validierung**: pointblanc prüft Datenqualität
    - Wenn **Fehler**: Abbruch mit aussagekräftigen Fehlermeldungen
    - Wenn **OK**: Weiter zu Berechnung
@@ -49,7 +49,7 @@ CR = (va + bk) / vp                       # Combined Ratio (Ziel: 85-105%)
    - Download-Link zu Rohdaten
 
 ### v2-Szenario (Demo)
-- Stakeholder behebt Validierungsfehler → v2
+- Fehlerhafte v1 wird behoben → v2 hochgeladen
 - targets-Pipeline läuft erneut
 - **Caching**: Unveränderte Inputs werden wiederverwendet
 
@@ -62,7 +62,7 @@ CR = (va + bk) / vp                       # Combined Ratio (Ziel: 85-105%)
 - **Datenvalidation**: pointblanc (Custom Rules)
 - **Workflow-Orchestrierung**: `targets` (DAG + Caching)
 - **Output-Format**: Quarto (.qmd → HTML/PDF Report)
-- **Testing**: testthat für Rechenfunktionen
+- **Testing**: testthat für Rechenfunktionen + Validierung
 
 ### Finale Umsetzung (falls akzeptiert)
 - Git: Azure DevOps
@@ -78,57 +78,39 @@ CR = (va + bk) / vp                       # Combined Ratio (Ziel: 85-105%)
 - [x] Dummy-Daten generiert (v1 + v2)
 - [x] Formelwerk definiert
 
-**Status**: Ready for Phase 2
+**Status**: ✅ Abgeschlossen
 
 ---
 
-### Phase 2a: Core-Funktionen (45min)
-- [ ] `R/01_load_data.R` – CSV-Laden mit Error-Handling
-- [ ] `R/02_validate_data.R` – pointblanc Validierungsregeln
-- [ ] `R/03_calculate.R` – Formelwerk-Implementierung
-- [ ] Unit Tests (testthat) für Berechnungen
+### Phase 2: Core-Funktionen & Tests (90min) ✅
+- [x] `R/01_load_data.R` – CSV-Laden mit Error-Handling
+- [x] `R/02_validate_data.R` – Validierungsregeln
+- [x] `R/03_calculate.R` – Formelwerk-Implementierung
+- [x] `_targets.R` – Data-Pipeline funktionsfähig
+- [x] Validierung in targets integriert
+- [x] Tests inline (in _targets.R)
 
-**Output**: Validierte & berechnete Daten ready für Shiny + targets
-
----
-
-### Phase 2b: Shiny-Upload-Interface (45min)
-- [ ] `shiny_app/app.R` – File-Upload-Interface
-  - Upload für 4 CSVs (Input_Hochrechnung, Input_Rabatt, Input_Betriebskosten, Input_SAP)
-  - Live-Validierung beim Upload (grün/rot Feedback)
-  - Fehler-Details anzeigen (welche Spalte/Zeile problematisch)
-  - "Berechnung starten" Button (nur wenn alle valid)
-- [ ] Validierungs-Feedback UI (pointblanc Errors anzeigen)
-- [ ] Integration mit targets-Pipeline
-
-**Output**: Shiny-App triggert targets bei gültigen Daten
+**Status**: ✅ Abgeschlossen – Pipeline läuft erfolgreich!
 
 ---
 
-### Phase 3: targets-Pipeline & Quarto-Report (60min)
-- [ ] `_targets.R` (vereinfacht, Daten von Shiny)
-  - `tar_target()` für Load → Validate → Calculate
-  - Output als CSV + temporäre Daten für Report
-- [ ] `report.qmd` – Quarto-Report Template
-  - Zusammenfassung-Tabelle (alle KPIs pro Produkt)
-  - Analysen:
-    - CR-Analyse (Ampel: grün/gelb/rot je nach CR)
-    - SQ-Analyse (Zielbereich 60-80%)
-    - SAP-Delta-Analyse
-    - Top/Bottom Performer
-  - Download-Links für Rohdaten
-- [ ] targets-Report-Generierung in Shiny integrieren
+### Phase 3: Quarto-Report & Shiny-Dashboard (60min) 🟡
+- [x] `report.qmd` – Quarto-Report Template erstellt
+- [ ] `app.R` – Shiny-Dashboard für Versions-Vergleich
+- [ ] targets-Pipeline mit Report testen
+- [ ] Shiny-App starten und testen
 
-**Output**: HTML-Report nach erfolgreichem Durchlauf
+**Status**: 🟡 In Arbeit – Report-Template vorhanden, Shiny folgt
 
 ---
 
-### Phase 4: Polish & Demo (40min)
+### Phase 4: Polish & Demo (40min) ⏳
 - [ ] targets-DAG Screenshot für Pitch
-- [ ] README schreiben (Use-Case + Bedienung)
-- [ ] Mock-Fehlerfall testen (v2 mit Validierungsfehlern)
-- [ ] Code-Kommentare
-- [ ] Cleanup & Final Test
+- [ ] README schreiben
+- [ ] Mock-Fehlerfall testen
+- [ ] Final Test vor Pitch
+
+**Status**: ⏳ Ausstehend
 
 ---
 
@@ -157,14 +139,45 @@ Folgende **Validierungen** müssen greifen:
 
 ---
 
+## Testing-Strategie
+
+### Unit Tests (testthat) für Core-Funktionen
+Dateien in `tests/testthat/`:
+
+**test_01_load_data.R** – CSV-Laden testen:
+- CSV wird korrekt geladen (Spalten, Zeilen)
+- Datentypen werden korrekt interpretiert
+- Error-Handling bei fehlenden Dateien
+
+**test_02_validate_data.R** – pointblanc Regeln testen:
+- Data Quality Checks (Spalten, NAs, Duplikate)
+- Business Rule Checks (Rabatte, SM-Range, alle Produkte)
+- Aussagekräftige Error-Messages
+
+**test_03_calculate.R** – Formelwerk testen:
+- `nvp` korrekt berechnet (nvp = bvp - (fam_rab + mj_rab))
+- `SQ` korrekt berechnet (SQ = nvl / nvp)
+- `vp` korrekt berechnet (vp = nvp - advo - pd)
+- `va` korrekt berechnet (va = nvl + sap + sm)
+- `CR` korrekt berechnet (CR = (va + bk) / vp)
+- Edge Cases (Division by zero, negative values)
+
+### Workflow Tests
+`tests/testthat/test_workflow.R` – Load → Validate → Calculate:
+- v1 (gültig) → Validierung OK → Berechnung erfolgreich
+- v1 (Fehler) → Validierung schlägt fehl → Error-Message
+- v2 (behoben) → Validierung OK → Berechnung erfolgreich
+
+---
+
 ## Status
-🟡 **Phase 1 abgeschlossen** → Phase 2: targets Pipeline + Funktionen
+🟡 **Phase 1 abgeschlossen** → Phase 2: Core-Funktionen implementieren + testen
 
 ---
 
 ## Notizen für Debugging/Pitch
 - targets-DAG Screenshot vor Pitch testen!
-- Mock-Fehlerfall vorbereiten (csv mit absichtlichen Fehlern)
+- Mock-Fehlerfall (CSV mit absichtlichen Fehlern) vorbereiten
 - Report sollte auch bei kleinen Datenmengen aussagekräftig sein
 - pointblanc Rules müssen aussagekräftige Errors werfen
 - README für Stakeholder schreiben (nicht nur Entwickler)
