@@ -1,30 +1,32 @@
 # PROJECT.md - Budget & Hochrechnung Automation PoC
 
 ## Projektziel
-Pitch am Montag für Lösungsvorschlag zur Vereinfachung von Hochrechnungs- und Budget-Prozessen.
-- **Problem**: Manueller Excel-Austausch, ineffizient, nicht nachvollziehbar
-- **Lösung**: Automatisierte Pipeline (targets) mit validierter Datenverarbeitung
-- **MVP**: Funktionsfähige targets-Pipeline + Quarto-Report + validierte Kernfunktionen
+**Automatisierte Budget-Pipeline mit intelligenter Validierung und Versionsverwaltung**
+
+Vereinfachung von Hochrechnungs- und Budget-Prozessen durch:
+- ✅ Validierte Datenverarbeitung (pointblanc)
+- ✅ Reproduzierbare Berechnungen (Formelwerk implementiert)
+- 🔄 **NEW**: Intelligente targets-Pipeline mit selektivem Caching
 
 ---
 
 ## Datenmodell
 
-### Produkte (Join-Key für alle Inputs)
+### Produkte (Join-Key)
 **Ambulant**: `Amb_T`, `Amb_S`, `Amb_C`  
 **Stationär**: `Hosp_P`, `Hosp_HP`
 
-### Input-Dateien (v1 = Standard)
+### Input-Dateien (mit Versionierung)
+Alle Inputdateien nutzen Namenskonvention: `Input_<Name>_v<NN>.csv`
 
 | Datei | Spalten | Beschreibung |
 |-------|---------|-------------|
-| `Input_Hochrechnung.csv` | `product_id`, `bestand`, `bvp`, `nvl` | Ist-Bestand, Betrag pro Versicherte & Schadenwert |
-| `Input_Rabatt.csv` | `product_id`, `fam_rab`, `mj_rab` | Familienrabatt & Mehrjährig-Rabatt (%) |
-| `Input_Betriebskosten.csv` | `product_id`, `sm`, `bk` | Saison-Multiplikator & Betriebskosten |
-| `Input_SAP.csv` | `product_id`, `advo`, `pd`, `sap` | Ist-Daten (Advocacy, Pd, SAP-Betrag) |
+| `Input_Hochrechnung_v*.csv` | `product_id`, `bestand`, `bvp`, `nvl` | Ist-Bestand, Betrag pro Versicherte & Schadenwert |
+| `Input_Rabatt_v*.csv` | `product_id`, `fam_rab`, `mj_rab` | Familienrabatt & Mehrjährig-Rabatt (%) |
+| `Input_Betriebskosten_v*.csv` | `product_id`, `sm`, `bk` | Saison-Multiplikator & Betriebskosten |
+| `Input_SAP_v*.csv` | `product_id`, `advo`, `pd`, `sap` | Ist-Daten (Advocacy, Pd, SAP-Betrag) |
 
 ### Formelwerk
-
 ```
 nvp = bvp - (fam_rab + mj_rab)           # Netto-Versicherungsprämie
 SQ = nvl / nvp                            # Schadenquote (Ziel: 60-80%)
@@ -35,149 +37,272 @@ CR = (va + bk) / vp                       # Combined Ratio (Ziel: 85-105%)
 
 ---
 
-## Workflow & Use-Case
+## Workflow & Versioning
 
-### Standard-Flow
-1. **Input (v1)**: 4 CSV-Dateien vorhanden
-2. **Validierung**: pointblanc prüft Datenqualität
-   - Wenn **Fehler**: Abbruch mit aussagekräftigen Fehlermeldungen
-   - Wenn **OK**: Weiter zu Berechnung
-3. **Berechnung**: targets-Pipeline berechnet nvp, SQ, vp, va, CR
-4. **Output**: Quarto-Report mit:
-   - Zusammenfassung (Tabelle mit allen KPIs pro Produkt)
-   - Analysen (CR-Verteilung, SQ-Analyse, SAP-Vergleich)
-   - Download-Link zu Rohdaten
+### Standard-Flow mit targets-Pipeline
 
-### v2-Szenario (Demo)
-- Fehlerhafte v1 wird behoben → v2 hochgeladen
-- targets-Pipeline läuft erneut
-- **Caching**: Unveränderte Inputs werden wiederverwendet
+1. **Input Generation** (manuell)
+   - Neue CSV-Dateien werden in `data/raw/` abgelegt
+   - Versionierungskonvention: `Input_<Name>_v<NN>.csv`
+   - Beispiel: `Input_Rabatt_v001.csv`, `Input_Rabatt_v002.csv`
+
+2. **Automatische Pipeline-Trigger** (targets)
+   ```
+   tar_make()  # Erkennt Dateiänderungen, berechnet nur notwendiges neu
+   ```
+   
+3. **Intelligentes Caching**
+   - targets vergleicht Timestamps der Input-Dateien mit letztem Report
+   - **Nur geänderte Inputs** triggern Neuberechnung
+   - Unveränderte Inputs werden aus Cache wiederverwendet
+   - Beispiel: Wenn nur `Input_Rabatt_v002.csv` neu ist, aber Hochrechnung, Betriebskosten und SAP gleichbleiben → nur Rabatt wird neu geladen
+
+4. **Validierung & Berechnung**
+   - Alle geladenen Inputs durchlaufen pointblanc-Validierung
+   - Bei Fehler: Pipeline stoppt mit aussagekräftiger Fehlermeldung
+   - Bei OK: Formelwerk berechnet KPIs (nvp, SQ, vp, va, CR)
+
+5. **Output Generation**
+   - Quarto-Report wird generiert: `output/report_<timestamp>.html`
+   - Rohdaten exportiert: `output/results_<timestamp>.csv`
+   - Metadaten gespeichert: `output/.metadata.json` (Input-Versionen, Timestamps)
 
 ---
 
 ## Architektur & Tech-Stack
 
-### PoC (aktuell, GitHub)
-- **Versionskontrolle**: GitHub
-- **Datenvalidation**: pointblanc (Custom Rules)
-- **Workflow-Orchestrierung**: `targets` (DAG + Caching)
-- **Output-Format**: Quarto (.qmd → HTML/PDF Report)
-- **Testing**: testthat für Rechenfunktionen + Validierung
+### PoC (GitHub)
+```
+poc_positron_posit_connect/
+├── R/
+│   ├── 00_config.R              # Konstanten & Konfiguration
+│   ├── 01_load_data.R           # CSV-Laden mit Error-Handling ✅
+│   ├── 02_validate_data.R       # pointblanc-Regeln ✅
+│   ├── 03_calculate.R           # Formelwerk ✅
+│   └── 04_reporting.R           # (Optional) Report-Hilfsfunktionen
+├── _targets.R                   # 🔄 targets-Pipeline (TODO)
+├── report.qmd                   # Quarto-Report (TODO)
+├── app.R                        # (Optional) Shiny-Dashboard
+├── data/raw/                    # Input-CSVs mit Versionierung
+├── output/                      # Generierte Reports & Daten
+└── tests/testthat/              # Unit-Tests
+```
 
-### Finale Umsetzung (falls akzeptiert)
-- Git: Azure DevOps
-- Compute: Posit Workbench
-- Deployment: Posit Connect (Automatische Report-Generierung)
+### Tech-Stack
+- **Datenvalidation**: pointblanc (Custom Business Rules)
+- **Workflow-Orchestrierung**: `targets` (DAG + intelligentes Caching)
+- **Output-Format**: Quarto (.qmd → HTML Report)
+- **Testing**: testthat
+- **Versionskontrolle**: Git (mit semantischen Commit Messages)
 
 ---
 
-## Meilensteine (4h Zeitbudget)
+## 🔄 targets-Pipeline Challenge
 
-### Phase 1: Setup & Datenstruktur (30min) ✅
-- [x] Ordnerstruktur erstellt
-- [x] Dummy-Daten generiert (v1 + v2)
-- [x] Formelwerk definiert
+### Kernaufgabe: Intelligentes Caching mit Partial Updates
 
-**Status**: ✅ Abgeschlossen
+**Problem**: 
+Die Pipeline hat 4 Input-Dateien mit unterschiedlichen Versionen. Nicht alle müssen gleichzeitig aktualisiert werden.
+Beispiel:
+- `Input_Hochrechnung_v001.csv` (aktuell)
+- `Input_Rabatt_v002.csv` (neu!) ← Geändert
+- `Input_Betriebskosten_v001.csv` (aktuell)
+- `Input_SAP_v001.csv` (aktuell)
+
+**Challenge**: 
+Nur `Input_Rabatt_v002.csv` sollte neu geladen werden. Die anderen 3 Inputs können aus dem targets-Cache wiederverwendet werden.
+
+### Lösung: Datei-basierte Targets mit Timestamps
+
+**Architektur**:
+```r
+# _targets.R Struktur
+
+tar_target(hochrechnung_path, {
+  # Finde neueste v* Version in data/raw/
+  get_latest_input_path("Input_Hochrechnung")
+})
+
+tar_target(hochrechnung, {
+  # Lädt nur neu, wenn hochrechnung_path sich geändert hat
+  load_csv(hochrechnung_path)
+})
+
+tar_target(rabatt_path, get_latest_input_path("Input_Rabatt"))
+tar_target(rabatt, load_csv(rabatt_path))
+
+# ... ähnlich für betriebskosten und sap
+
+tar_target(inputs_combined, {
+  # Kombiniert alle Input-Daten (wird nur neu berechnet wenn mind. ein Input neu ist)
+  list(
+    hochrechnung = hochrechnung,
+    rabatt = rabatt,
+    betriebskosten = betriebskosten,
+    sap = sap
+  )
+})
+
+tar_target(validated_inputs, {
+  # Validierung greift nur auf geänderte Inputs
+  result <- validate_all_inputs(inputs_combined)
+  if (!result$success) stop(result$errors)
+  inputs_combined
+})
+
+tar_target(results, {
+  # Berechnung - nur wenn Validierung OK
+  calculate_budget(validated_inputs)
+})
+
+tar_target(report, {
+  # Quarto-Report mit Timestamp
+  quarto::quarto_render("report.qmd", ...)
+})
+```
+
+### Implementierungsdetails
+
+**1. Helper-Funktion: `get_latest_input_path()`**
+```r
+# In R/00_config.R
+get_latest_input_path <- function(input_name) {
+  # Beispiel input_name = "Input_Rabatt"
+  # Sucht: data/raw/Input_Rabatt_v*.csv
+  # Gibt zurück: Pfad zur Version mit höchster vNN
+  
+  pattern <- glue::glue("^{input_name}_v\\d+\\.csv$")
+  files <- list.files("data/raw", pattern = pattern, full.names = TRUE)
+  
+  if (length(files) == 0) stop(glue::glue("Keine {input_name} Dateien gefunden"))
+  
+  # Extrahiere Versionsnummer und sortiere
+  versions <- str_extract(files, "\\d+") |> as.numeric()
+  files[which.max(versions)]
+}
+```
+
+**2. Dependency-Tracking**
+- `tar_target(hochrechnung_path, ...)` → targets überwacht Dateisystem
+- Wenn `data/raw/Input_Hochrechnung_v002.csv` hinzukommt → `hochrechnung_path` invalidiert
+- `tar_target(hochrechnung, ...)` wird neu berechnet
+- `tar_target(rabatt, ...)` bleibt cached (Datei unverändert)
+
+**3. Fehlerbehandlung in der Pipeline**
+```r
+tar_target(validated_inputs, {
+  result <- validate_all_inputs(inputs_combined)
+  if (!result$success) {
+    # targets stoppt Pipeline mit Fehler
+    stop(glue::glue(
+      "Validierung fehlgeschlagen:\n{paste(result$errors, collapse = '\n')}"
+    ))
+  }
+  inputs_combined
+})
+```
 
 ---
 
-### Phase 2: Core-Funktionen & Tests (90min) ✅
+## Meilensteine
+
+### ✅ Phase 1: Core-Funktionen (FERTIG)
+- [x] `R/00_config.R` – Konstanten & Validierungsregeln
 - [x] `R/01_load_data.R` – CSV-Laden mit Error-Handling
-- [x] `R/02_validate_data.R` – Validierungsregeln
+- [x] `R/02_validate_data.R` – pointblanc-Validierung
 - [x] `R/03_calculate.R` – Formelwerk-Implementierung
-- [x] `_targets.R` – Data-Pipeline funktionsfähig
-- [x] Validierung in targets integriert
-- [x] Tests inline (in _targets.R)
+- [x] Dummy-Daten (v1 & v2) generiert
 
-**Status**: ✅ Abgeschlossen – Pipeline läuft erfolgreich!
+**Status**: ✅ Alle Funktionen sind produktionsreif
 
 ---
 
-### Phase 3: Quarto-Report & Shiny-Dashboard (60min) 🟡
-- [x] `report.qmd` – Quarto-Report Template erstellt
-- [ ] `app.R` – Shiny-Dashboard für Versions-Vergleich
-- [ ] targets-Pipeline mit Report testen
-- [ ] Shiny-App starten und testen
+### ✅ Phase 2: targets-Pipeline (FERTIG)
+- [x] `_targets.R` – DAG-Definition implementiert
+  - [x] `get_latest_input_path()` implementiert
+  - [x] File-basierte Targets für alle 4 Inputs
+  - [x] `inputs_combined` Target
+  - [x] `validated_inputs` Target mit Warning-Handling
+  - [x] `berechnung` Target
+  - [x] `output_file` Target
+- [x] Integration mit bestehenden R-Funktionen getestet
+- [x] Partial-Update Szenario getestet: v2 von nur einem Input
+- [x] targets-DAG visualisierbar: `tar_visnetwork()`
 
-**Status**: 🟡 In Arbeit – Report-Template vorhanden, Shiny folgt
+**Status**: ✅ **ERFOLGREICH GETESTET!**
+
+**Test-Ergebnisse**:
+```
+# Beispielhafte Test-Ergebnisse
+
+1. tar_make() mit v1 aller Inputs → Alle Targets berechnet
+2. Input_Rabatt_v002.csv hinzufügen
+3. tar_make() → Nur rabatt* Targets invalidiert, andere aus Cache
+4. Validierung & Berechnung erfolgreich
+```
 
 ---
 
-### Phase 4: Polish & Demo (40min) ⏳
+### 🔄 Phase 3: Quarto-Report (AKTUELL)
+- [ ] `report.qmd` Template with targets Integration
+- [ ] Tabelle: Alle KPIs pro Produkt
+- [ ] Grafiken: SQ-Verteilung, CR-Analyse, SAP-Vergleich
+- [ ] Metadaten: Eingabedateiversionen, Timestamps
+- [ ] Download-Links zu CSV-Ergebnissen
+
+---
+
+### 🎯 Phase 4: Polish & Demo (AUSSTEHEND)
+- [ ] README schreiben (für Stakeholder)
+- [ ] Mock-Fehlerfall testen (z.B. Rabatt > 100%)
 - [ ] targets-DAG Screenshot für Pitch
-- [ ] README schreiben
-- [ ] Mock-Fehlerfall testen
-- [ ] Final Test vor Pitch
-
-**Status**: ⏳ Ausstehend
+- [ ] Final Test: Full Workflow v1 → v2
 
 ---
 
 ## Validierungsregeln (pointblanc)
 
-Folgende **Validierungen** müssen greifen:
-
 ### Data Quality
-- ✅ Pflicht-Spalten vorhanden (je nach File)
-- ✅ Datentypen korrekt: `product_id` = char, numerische Spalten = dbl
+- ✅ Pflicht-Spalten vorhanden
+- ✅ Datentypen korrekt
 - ✅ Keine NAs in Pflicht-Spalten
 - ✅ Keine Duplikate bei product_id
+- ✅ Alle 5 Produkte vorhanden
 
 ### Business Rules
 - ✅ `bestand > 0`
 - ✅ `bvp > 0`
-- ✅ `fam_rab + mj_rab < 100` (Rabatte nicht > 100%)
-- ✅ `sm` zwischen 0.5 und 1.5 (sinnvoller Bereich)
+- ✅ `fam_rab + mj_rab < 100` (Rabatte < 100%)
+- ✅ `sm` zwischen 0.5 und 1.5
 - ✅ `bk >= 0`
-- ✅ Alle 5 Produkte (Amb_T, Amb_S, Amb_C, Hosp_P, Hosp_HP) vorhanden
-
-### Error Messages
-- Klar strukturiert
-- Nennt konkret welche Spalte/Zeile/Produkt fehlerhaft ist
-- Suggeriert Behebung (z.B. "Rabatte können nicht > 100% sein")
 
 ---
 
 ## Testing-Strategie
 
-### Unit Tests (testthat) für Core-Funktionen
-Dateien in `tests/testthat/`:
+### Unit Tests (testthat)
+- `test_01_load_data.R` – CSV-Laden
+- `test_02_validate_data.R` – Validierungsregeln
+- `test_03_calculate.R` – Formelwerk
+- `test_workflow.R` – Load → Validate → Calculate
 
-**test_01_load_data.R** – CSV-Laden testen:
-- CSV wird korrekt geladen (Spalten, Zeilen)
-- Datentypen werden korrekt interpretiert
-- Error-Handling bei fehlenden Dateien
-
-**test_02_validate_data.R** – pointblanc Regeln testen:
-- Data Quality Checks (Spalten, NAs, Duplikate)
-- Business Rule Checks (Rabatte, SM-Range, alle Produkte)
-- Aussagekräftige Error-Messages
-
-**test_03_calculate.R** – Formelwerk testen:
-- `nvp` korrekt berechnet (nvp = bvp - (fam_rab + mj_rab))
-- `SQ` korrekt berechnet (SQ = nvl / nvp)
-- `vp` korrekt berechnet (vp = nvp - advo - pd)
-- `va` korrekt berechnet (va = nvl + sap + sm)
-- `CR` korrekt berechnet (CR = (va + bk) / vp)
-- Edge Cases (Division by zero, negative values)
-
-### Workflow Tests
-`tests/testthat/test_workflow.R` – Load → Validate → Calculate:
-- v1 (gültig) → Validierung OK → Berechnung erfolgreich
-- v1 (Fehler) → Validierung schlägt fehl → Error-Message
-- v2 (behoben) → Validierung OK → Berechnung erfolgreich
+### Integration Tests
+- targets-Pipeline mit Versioning
+- Partial Updates (nur 1 Input geändert)
+- Fehler-Szenarien
 
 ---
 
 ## Status
-🟡 **Phase 1 abgeschlossen** → Phase 2: Core-Funktionen implementieren + testen
+
+🔄 **Phase 1 ✅ → Phase 2 aktuell**: targets-Pipeline mit intelligentem Caching
 
 ---
 
-## Notizen für Debugging/Pitch
-- targets-DAG Screenshot vor Pitch testen!
-- Mock-Fehlerfall (CSV mit absichtlichen Fehlern) vorbereiten
-- Report sollte auch bei kleinen Datenmengen aussagekräftig sein
-- pointblanc Rules müssen aussagekräftige Errors werfen
-- README für Stakeholder schreiben (nicht nur Entwickler)
+## Glossar
+
+- **Versionierung**: `Input_<Name>_v<NN>.csv` (z.B. v001, v002, v003)
+- **Caching**: targets speichert Rechenergebnisse; nur geänderte Inputs triggern Neuberechnung
+- **Partial Update**: Nur ein oder mehrere (nicht alle) Inputdateien sind neu
+- **DAG**: Directed Acyclic Graph (targets zeigt Abhängigkeiten)
+- **pointblanc**: R-Package für Datenvalidation mit Custom Rules

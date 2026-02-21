@@ -5,7 +5,7 @@
 library(dplyr)
 library(readr)
 
-products <- c("Amb_T", "Amb_S", "Amb_C", "Hosp_P", "Hosp_HP")
+source("R/00_config.R")
 
 # ============================================================================
 # LEITPLANKEN (Business Rules)
@@ -48,12 +48,14 @@ v_sap <- get_next_version("^Input_SAP_v\\d{3}\\.csv$")
 # ============================================================================
 
 set.seed(v_hochrechnung)
+# Generate Hochrechnung
 hochrechnung <- tibble(
-  product_id = products,
-  bestand = runif(5, 50000, 300000) |> round(0),
-  bvp = runif(5, 150, 300) |> round(0),
-  nvl = runif(5, 50, 200) |> round(2)
+  product_id = VALID_PRODUCTS,
+  bestand = runif(5, BESTAND_MIN, BESTAND_MAX),
+  bvp = runif(5, BVP_MIN, BVP_MAX),
+  nvl = runif(5, BVP_MIN * 0.3, BVP_MAX * 0.6)  # NVL zwischen 30-60% von BVP
 )
+
 write_csv(hochrechnung, glue::glue("data/raw/Input_Hochrechnung_v{sprintf('%03d', v_hochrechnung)}.csv"))
 
 set.seed(v_rabatt)

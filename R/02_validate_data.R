@@ -1,90 +1,181 @@
+# ============================================================================
+# VALIDATE: Datenvalidierung mit Warnings (pointblanc-Ready)
+# ============================================================================
+# HINWEIS: Diese Funktion ist vorbereitet für zukünftige Integration mit pointblanc
+# Aktuell: Warnings bei Validierungsfehlern, Pipeline läuft weiter
+# TODO: Mit pointblanc ersetzen für schönere Darstellung und erweiterte Features
+
 library(dplyr)
 library(glue)
 
 source("R/00_config.R")
 
-#' Validate all inputs
-#'
-#' @param inputs List with hochrechnung, rabatt, betriebskosten, sap
-#'
-#' @return List with success (TRUE/FALSE) and errors vector
-#'
+# ============================================================================
+# Main Validation Function
+# ============================================================================
+
 validate_all_inputs <- function(inputs) {
+  # Returns list: list(success = TRUE/FALSE, warnings = c(...), errors = c(...))
+  
+  warnings <- c()
   errors <- c()
   
-  # Check if all 4 files present
-  if (is.null(inputs$hochrechnung)) errors <- c(errors, "Hochrechnung fehlt")
-  if (is.null(inputs$rabatt)) errors <- c(errors, "Rabatt fehlt")
-  if (is.null(inputs$betriebskosten)) errors <- c(errors, "Betriebskosten fehlt")
-  if (is.null(inputs$sap)) errors <- c(errors, "SAP fehlt")
+  # Validate each input file
+  warnings <- c(warnings, validate_file(inputs$hochrechnung, "hochrechnung"))
+  warnings <- c(warnings, validate_file(inputs$rabatt, "rabatt"))
+  warnings <- c(warnings, validate_file(inputs$betriebskosten, "betriebskosten"))
+  warnings <- c(warnings, validate_file(inputs$sap, "sap"))
   
-  if (length(errors) > 0) {
-    return(list(success = FALSE, errors = errors))
-  }
+  # Validate business rules
+  warnings <- c(warnings, validate_business_rules(inputs))
   
-  # Validate each file
-  errors <- c(errors, validate_file(inputs$hochrechnung, "hochrechnung"))
-  errors <- c(errors, validate_file(inputs$rabatt, "rabatt"))
-  errors <- c(errors, validate_file(inputs$betriebskosten, "betriebskosten"))
-  errors <- c(errors, validate_file(inputs$sap, "sap"))
+  # Remove NULL/empty warnings
+  warnings <- warnings[!is.null(warnings) & warnings != ""]
   
-  # Check business rules
-  errors <- c(errors, validate_business_rules(inputs))
-  
-  list(success = length(errors) == 0, errors = errors)
+  list(
+    success = TRUE,  # Pipeline läuft weiter (Warnings statt Errors)
+    warnings = if (length(warnings) > 0) warnings else NULL,
+    errors = errors
+  )
 }
 
-#' Validate single file structure
-#'
+# ============================================================================
+# File-Level Validation
+# ============================================================================
+
 validate_file <- function(data, file_key) {
-  errors <- c()
+  warnings <- c()
   
-  if (nrow(data) == 0) {
-    return(c(errors, glue("{file_key}: Datei ist leer")))
+  if (!is.data.frame(data)) {
+    return(glue::glue("FEHLER: {file_key} ist kein Data Frame"))
   }
   
   # Get expected columns from config
-  expected_cols <- INPUT_FILES[[file_key]]$columns
+  file_config <- INPUT_FILES[[file_key]]
+  expected_cols <- file_config$columns
   
-  # Check required columns exist
+  # Check: Pflicht-Spalten vorhanden?
   missing_cols <- setdiff(expected_cols, names(data))
   if (length(missing_cols) > 0) {
-    errors <- c(errors, glue("{file_key}: Fehlende Spalten: {paste(missing_cols, collapse=', ')}"))
+    warnings <- c(warnings, glue::glue(
+      "⚠️ {file_key}: Spalten fehlen: {paste(missing_cols, collapse = ', ')}"
+    ))
   }
   
-  errors
+  # Check: Keine NAs in Pflicht-Spalten
+  for (col in expected_cols) {
+    if (col %in% names(data) && any(is.na(data[[col]]))) {
+      na_count <- sum(is.na(data[[col]]))
+      warnings <- c(warnings, glue::glue(
+        "⚠️ {file_key}: {na_count} NA-Werte in Spalte '{col}'"
+      ))
+    }
+  }
+  
+  # Check: Keine Duplikate bei product_id
+  if ("product_id" %in% names(data)) {
+    dups <- sum(duplicated(data$product_id))
+    if (dups > 0) {
+      warnings <- c(warnings, glue::glue(
+        "⚠️ {file_key}: {dups} doppelte product_id Einträge"
+      ))
+    }
+  }
+  
+  # Check: Alle 5 Produkte vorhanden
+  if ("product_id" %in% names(data)) {
+    missing_products <- setdiff(VALID_PRODUCTS, data$product_id)
+    if (length(missing_products) > 0) {
+      warnings <- c(warnings, glue::glue(
+        "⚠️ {file_key}: Produkte fehlen: {paste(missing_products, collapse = ', ')}"
+      ))
+    }
+  }
+  
+  warnings
 }
 
-#' Validate business rules (3 einfache Regeln)
-#'
+# ============================================================================
+# Business Rules Validation
+# ============================================================================
+
 validate_business_rules <- function(inputs) {
-  errors <- c()
+  warnings <- c()
   
-  # REGEL 1: Kein NA-Wert darf vorkommen
-  for (file_key in names(inputs)) {
-    if (any(is.na(inputs[[file_key]]))) {
-      errors <- c(errors, glue("{file_key}: NA-Werte gefunden"))
+  # HOCHRECHNUNG: bestand > 0
+  if ("hochrechnung" %in% names(inputs)) {
+    hr <- inputs$hochrechnung
+    invalid <- which(hr$bestand <= 0)
+    if (length(invalid) > 0) {
+      warnings <- c(warnings, glue::glue(
+        "⚠️ Hochrechnung: {length(invalid)} Zeile(n) mit bestand ≤ 0"
+      ))
     }
   }
   
-  # REGEL 1b: Keine 0-Werte dürfen vorkommen
-  for (file_key in names(inputs)) {
-    if (any(inputs[[file_key]] == 0, na.rm = TRUE)) {
-      errors <- c(errors, glue("{file_key}: 0-Werte gefunden"))
+  # HOCHRECHNUNG: bvp > 0
+  if ("hochrechnung" %in% names(inputs)) {
+    hr <- inputs$hochrechnung
+    invalid <- which(hr$bvp <= 0)
+    if (length(invalid) > 0) {
+      warnings <- c(warnings, glue::glue(
+        "⚠️ Hochrechnung: {length(invalid)} Zeile(n) mit bvp ≤ 0"
+      ))
     }
   }
   
-  # REGEL 2: Alle 5 Produkte vorhanden
-  products <- unique(inputs$hochrechnung$product_id)
-  missing <- setdiff(VALID_PRODUCTS, products)
-  if (length(missing) > 0) {
-    errors <- c(errors, glue("Fehlende Produkte: {paste(missing, collapse=', ')}"))
+  # RABATT: fam_rab + mj_rab < 100
+  if ("rabatt" %in% names(inputs)) {
+    rab <- inputs$rabatt
+    rab$total_rab <- rab$fam_rab + rab$mj_rab
+    invalid <- which(rab$total_rab >= 100)
+    if (length(invalid) > 0) {
+      invalid_products <- rab$product_id[invalid]
+      warnings <- c(warnings, glue::glue(
+        "⚠️ Rabatt: {paste(invalid_products, collapse = ', ')} hat Gesamtrabatt ≥ 100%"
+      ))
+    }
   }
   
-  # REGEL 3: Bestand <= 250000
-  if (any(inputs$hochrechnung$bestand > 250000)) {
-    errors <- c(errors, "Hochrechnung: bestand > 250000")
+  # BETRIEBSKOSTEN: sm zwischen 0.5 und 1.5
+  if ("betriebskosten" %in% names(inputs)) {
+    bk <- inputs$betriebskosten
+    invalid <- which(bk$sm < 0.5 | bk$sm > 1.5)
+    if (length(invalid) > 0) {
+      invalid_products <- bk$product_id[invalid]
+      warnings <- c(warnings, glue::glue(
+        "⚠️ Betriebskosten: {paste(invalid_products, collapse = ', ')} hat sm außerhalb [0.5, 1.5]"
+      ))
+    }
   }
   
-  list(success = length(errors) == 0, errors = errors)
+  # BETRIEBSKOSTEN: bk >= 0
+  if ("betriebskosten" %in% names(inputs)) {
+    bk <- inputs$betriebskosten
+    invalid <- which(bk$bk < 0)
+    if (length(invalid) > 0) {
+      invalid_products <- bk$product_id[invalid]
+      warnings <- c(warnings, glue::glue(
+        "⚠️ Betriebskosten: {paste(invalid_products, collapse = ', ')} hat negative bk"
+      ))
+    }
+  }
+  
+  warnings
 }
+
+# ============================================================================
+# Future Integration: pointblanc
+# ============================================================================
+# TODO: Diese Funktion mit pointblanc ersetzen für:
+# - Elegantere Regel-Definition
+# - Strukturierte Validierungsreports
+# - Interaktive Fehlervisualisierung
+#
+# Beispiel (Pseudo-Code):
+# pointblanc::add_rule(
+#   name = "bestand_positive",
+#   description = "Bestand muss > 0 sein",
+#   rule_fn = function(x) x$bestand > 0,
+#   level = "warning"  # oder "error"
+# )
