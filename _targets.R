@@ -40,6 +40,19 @@ init_logfile <- function() {
   logfile
 }
 
+# Helper: Get latest output version
+get_next_output_version <- function() {
+  files <- list.files("output", pattern = "^bu_v\\d+\\.csv$", full.names = FALSE)
+  
+  if (length(files) == 0) {
+    return("001")
+  }
+  
+  versions <- stringr::str_extract(files, "\\d+") |> as.numeric()
+  next_version <- max(versions) + 1
+  sprintf("%03d", next_version)
+}
+
 targets::tar_config_set(
   store = "_targets",
   script = "_targets.R"
@@ -171,8 +184,8 @@ list(
         dir.create("output", showWarnings = FALSE)
       }
       
-      timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-      filename <- glue::glue("output/berechnung_{timestamp}.csv")
+      version <- get_next_output_version()
+      filename <- glue::glue("output/bu_v{version}.csv")
       readr::write_csv(berechnung, filename)
       
       # Log Output-Generierung

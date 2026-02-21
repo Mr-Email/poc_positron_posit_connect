@@ -7,6 +7,7 @@ Vereinfachung von Hochrechnungs- und Budget-Prozessen durch:
 - ✅ Validierte Datenverarbeitung (pointblanc)
 - ✅ Reproduzierbare Berechnungen (Formelwerk implementiert)
 - 🔄 **NEW**: Intelligente targets-Pipeline mit selektivem Caching
+- 🎨 **NEW**: Interaktives Shiny-Dashboard mit Versions-Vergleich
 
 ---
 
@@ -103,7 +104,7 @@ poc_positron_posit_connect/
 ### Kernaufgabe: Intelligentes Caching mit Partial Updates
 
 **Problem**: 
-Die Pipeline hat 4 Input-Dateien mit unterschiedlichen Versionen. Nicht alle müssen gleichzeitig aktualisiert werden.
+Die Pipeline hat 4 Input-Dateien mit  unterschiedlichen Versionen. Nicht alle müssen gleichzeitig aktualisiert werden.
 Beispiel:
 - `Input_Hochrechnung_v001.csv` (aktuell)
 - `Input_Rabatt_v002.csv` (neu!) ← Geändert
@@ -251,12 +252,49 @@ tar_target(validated_inputs, {
 
 ---
 
-### 🔄 Phase 3: Quarto-Report (AKTUELL)
-- [ ] `report.qmd` Template with targets Integration
-- [ ] Tabelle: Alle KPIs pro Produkt
-- [ ] Grafiken: SQ-Verteilung, CR-Analyse, SAP-Vergleich
-- [ ] Metadaten: Eingabedateiversionen, Timestamps
-- [ ] Download-Links zu CSV-Ergebnissen
+### 🎨 Phase 3: Shiny Dashboard (AKTUELL)
+- [x] `app.R` – Main Shiny Application
+- [x] `R/shiny_helpers.R` – Helper-Funktionen
+- [x] Dashboard Tab: KPI-Übersicht & Visualisierungen
+- [x] Upload Tab: Neue Inputdateien hochladen
+- [x] Pipeline Control: tar_make() Trigger
+- [ ] **Versions-Vergleich Tab**: Alt vs. Neu Vergleiche
+- [ ] **Audit-Trail Tab**: Änderungs-Historie anzeigen
+- [ ] **Validierungs-Details Tab**: pointblanc-Fehler visualisieren
+- [ ] Export: Vergleichsberichte (PDF/HTML)
+
+**Features zur Implementierung**:
+
+1. **Versions-Historie**
+   - Zeige alle verfügbaren Input-Versionen in Dropdown
+   - Verlade alte CSV-Versionen aus `data/raw/`
+   - Berechne KPIs für beide Versionen (alt & neu)
+   - Side-by-Side Vergleich mit Differenzen farblich markiert
+
+2. **Unterschieds-Visualisierung**
+   - Tabelle mit alten & neuen Werten
+   - Spalten-weise Differenzen (Betrag & Prozent)
+   - Highlight der wichtigsten Änderungen (SQ, CR)
+   - Tooltip mit Erklärung der Änderungen
+
+3. **Audit-Trail**
+   - Chronologische Liste aller Input-Versionen
+   - Timestamps & Dateigrößen
+   - Wer hat die Datei hochgeladen (optional, wenn User-Track vorhanden)
+   - Download-Links zu alten Outputs
+
+4. **Validierungs-Details** (mit pointblanc)
+   - Zeige alle Validierungsprüfungen an
+   - ✅ Bestandene Regeln grün
+   - ❌ Fehlgeschlagene Regeln rot mit Begründung
+   - ⚠️ Warnungen gelb
+   - Details pro Product-ID bei Fehler
+
+**Notiz zu pointblanc**: 
+- pointblanc wird **NICHT** für Visualisierung verwendet
+- pointblanc ist für **Daten-Validierung** (Regelprüfung)
+- Visualisierung nutzt: ggplot2, plotly, reactable (für Tabellen)
+- Validierungsergebnisse werden dann visualisiert (als Text/Farben/Icons)
 
 ---
 
@@ -265,6 +303,8 @@ tar_target(validated_inputs, {
 - [ ] Mock-Fehlerfall testen (z.B. Rabatt > 100%)
 - [ ] targets-DAG Screenshot für Pitch
 - [ ] Final Test: Full Workflow v1 → v2
+- [ ] Shiny-Performance bei großen Datenmengen testen
+- [ ] Error-Handling für fehlende alte Versionen
 
 ---
 

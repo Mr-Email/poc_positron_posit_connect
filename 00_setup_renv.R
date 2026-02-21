@@ -39,15 +39,27 @@ if (!file.exists("renv.lock")) {
 cat("📦 Installiere Projekt-Abhängigkeiten...\n\n")
 
 required_packages <- c(
-  # Core
+  # Core Shiny
   "shiny",
-  "dplyr",
-  "readr",
-  "DT",
-  
-  # UI/Styling
   "bslib",
   "shinyjs",
+  
+  # Data Manipulation
+  "dplyr",
+  "tidyr",
+  "readr",
+  "stringr",
+  "glue",
+  "scales",
+  
+  # UI Components
+  "reactable",
+  "DT",
+  "htmlwidgets",
+  
+  # Visualisierung
+  "ggplot2",
+  "plotly",
   
   # Data Validation
   "pointblank",
@@ -55,6 +67,7 @@ required_packages <- c(
   # Reporting
   "quarto",
   "rmarkdown",
+  "knitr",
   
   # Testing
   "testthat",
@@ -63,10 +76,9 @@ required_packages <- c(
   "targets",
   "crew",
   
-  # Additional
+  # Utilities
   "tidyverse",
-  "here",
-  "htmlwidgets"  # ← Neu hinzugefügt (für DT)
+  "here"
 )
 
 for (pkg in required_packages) {
