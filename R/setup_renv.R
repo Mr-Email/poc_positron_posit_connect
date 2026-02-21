@@ -65,6 +65,16 @@ setup_renv <- function(reinstall = FALSE) {
   cat("\n💾 Erstelle Snapshot...\n")
   renv::snapshot(prompt = FALSE)
   
+  # 4.5 Installiere TinyTeX für PDF-Reports
+  cat("\n📄 Installiere TinyTeX für PDF-Reports...\n")
+  tryCatch({
+    quarto::quarto_install_tinytex()
+    cat("   ✅ TinyTeX installiert\n")
+  }, error = function(e) {
+    cat("   ⚠️ TinyTeX-Installation übersprungen\n")
+    cat("   Später manuell ausführen: quarto::quarto_install_tinytex()\n")
+  })
+  
   # 5. Status prüfen
   cat("\n✅ Status:\n")
   status <- renv::status()

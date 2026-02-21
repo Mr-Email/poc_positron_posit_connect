@@ -93,6 +93,29 @@ for (pkg in required_packages) {
 cat("\n")
 
 # ============================================================================
+# 3.5 INSTALLIERE TINYTEX FÜR PDF-REPORTS
+# ============================================================================
+
+cat("📄 Prüfe TinyTeX für PDF-Reports...\n\n")
+
+tryCatch({
+  # Prüfe ob TinyTeX bereits installiert ist
+  tinytex_check <- system("pdflatex --version", intern = TRUE, ignore.stderr = TRUE)
+  
+  if (length(tinytex_check) > 0) {
+    cat("  ✅ TinyTeX/LaTeX bereits installiert\n\n")
+  } else {
+    cat("  📥 Installiere TinyTeX...\n")
+    quarto::quarto_install_tinytex()
+    cat("  ✅ TinyTeX installiert\n\n")
+  }
+}, error = function(e) {
+  cat("  ⚠️ TinyTeX-Installation überspringen\n")
+  cat("  Hinweis: Für PDF-Reports später ausführen:\n")
+  cat("    quarto::quarto_install_tinytex()\n\n")
+})
+
+# ============================================================================
 # 4. SNAPSHOT DEPENDENCIES
 # ============================================================================
 

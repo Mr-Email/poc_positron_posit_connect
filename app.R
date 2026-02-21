@@ -65,6 +65,32 @@ ui <- page_navbar(
         tableOutput("analysis_differences")
       )
     )
+  ),
+  
+  # TAB 3: Report
+  nav_panel(
+    "Report",
+    layout_sidebar(
+      sidebar = sidebar(
+        h4("Report-Einstellungen"),
+        selectInput("report_basis", "Basis-Version:", choices = character(0), width = "100%"),
+        br(),
+        selectInput("report_current", "Aktuelle Version:", choices = character(0), width = "100%"),
+        br(),
+        actionButton("btn_report_html", "📄 HTML Report anzeigen",
+                     class = "btn-primary w-100 mb-2"),
+        downloadButton("download_report_html", "📥 Report herunterladen (HTML)",
+                       class = "btn-secondary w-100 mb-3"),
+        hr(),
+        h5("Status"),
+        textOutput("report_status")
+      ),
+      
+      card(
+        card_header("Report Anzeige"),
+        uiOutput("report_html_ui")
+      )
+    )
   )
 )
 
@@ -79,7 +105,8 @@ server <- function(input, output, session) {
     latest_data = NULL,
     compare_data1 = NULL,
     compare_data2 = NULL,
-    output_files = NULL
+    output_files = NULL,
+    report_html = NULL
   )
   
   # ========== UPDATE OUTPUT FILES LIST ==========
@@ -96,6 +123,8 @@ server <- function(input, output, session) {
       file_names <- basename(files)
       updateSelectInput(session, "file1", choices = file_names)
       updateSelectInput(session, "file2", choices = file_names)
+      updateSelectInput(session, "report_basis", choices = file_names)
+      updateSelectInput(session, "report_current", choices = file_names)
     }
   }
   
@@ -179,6 +208,62 @@ server <- function(input, output, session) {
     
     showNotification("✅ Vergleich geladen", type = "message", duration = 2)
   })
+  
+  # ========== BUTTON 1: HTML REPORT ANZEIGEN ==========
+  observeEvent(input$btn_report_html, {
+    if (is.null(input$report_basis) || is.null(input$report_current)) {
+      showNotification("Bitte beide Versionen wählen", type = "warning")
+      return()
+    }
+    
+    rv$status <- "⏳ Generiere HTML Report..."
+    
+    tryCatch({
+      # Finde Dateien
+      basis_file <- rv$output_files[basename(rv$output_files) == input$report_basis][1]
+      current_file <- rv$output_files[basename(rv$output_files) == input$report_current][1]
+      
+      # Generiere HTML
+      html_file <- glue::glue("report_{format(Sys.time(), '%Y%m%d_%H%M%S')}.html")
+      
+      quarto::quarto_render(
+        "report.qmd",
+        output_file = html_file,
+        execute_dir = ".",
+        execute_params = list(
+          basis_file = basis_file,
+          current_file = current_file
+        )
+      )
+      
+      # Lade HTML in rv
+      rv$report_html <- readr::read_file(html_file)
+      session$userData$html_file <- html_file
+      rv$status <- "✅ HTML Report generiert"
+      
+      showNotification("✅ Report angezeigt!", type = "message", duration = 2)
+      
+    }, error = function(e) {
+      rv$status <- paste("❌ Fehler:", e$message)
+      showNotification(paste("Fehler:", e$message), type = "error")
+    })
+  })
+  
+  # ========== DOWNLOAD: HTML HANDLER ==========
+  output$download_report_html <- downloadHandler(
+    filename = function() {
+      glue::glue("report_{format(Sys.time(), '%Y%m%d_%H%M%S')}.html")
+    },
+    content = function(file) {
+      html_file <- session$userData$html_file
+      
+      if (is.null(html_file) || !file.exists(html_file)) {
+        stop("Report nicht gefunden. Bitte erst 'HTML Report anzeigen' Button klicken.")
+      }
+      
+      file.copy(html_file, file)
+    }
+  )
   
   # ========== OUTPUT: STATUS ==========
   output$status <- renderText({
@@ -290,6 +375,15 @@ server <- function(input, output, session) {
         panel.grid.major.y = element_line(color = "gray90"),
         legend.position = "bottom"
       )
+  })
+  
+  # ========== OUTPUT: REPORT HTML ==========
+  output$report_html_ui <- renderUI({
+    if (is.null(rv$report_html)) {
+      return(div(class = "alert alert-info", "Klick 'HTML Report anzeigen' um Report zu generieren"))
+    }
+    
+    HTML(rv$report_html)
   })
 }
 

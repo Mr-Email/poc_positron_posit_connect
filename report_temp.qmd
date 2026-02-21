@@ -1,0 +1,192 @@
+---
+title: "Budget & Hochrechnung - Analyse Report"
+author: "PoC System"
+date: today
+format:
+  pdf:
+    toc: true
+    toc-depth: 2
+    code-fold: true
+    theme: flatly
+    embed-resources: true
+params:
+  basis_file: null
+  current_file: null
+execute:
+  echo: false
+  warning: false
+  message: false
+  fig-format: png
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(knitr)
+library(readr)
+library(ggplot2)
+library(tidyr)
+
+# Lade Basis und Aktuelle Berechnung
+basis_file <- params$basis_file
+current_file <- params$current_file
+
+basis_data <- read_csv(basis_file, show_col_types = FALSE)
+current_data <- read_csv(current_file, show_col_types = FALSE)
+
+# Vergleich vorbereiten
+comparison <- basis_data |>
+  select(product_id, sq, cr, bestand, nvp, vp) |>
+  rename_with(~paste0(., "_basis"), -product_id) |>
+  inner_join(
+    current_data |> select(product_id, sq, cr, bestand, nvp, vp),
+    by = "product_id"
+  ) |>
+  mutate(
+    sq_change = ((sq - sq_basis) / sq_basis) * 100,
+    cr_change = ((cr - cr_basis) / cr_basis) * 100
+  )
+```
+
+## Executive Summary
+
+Dieser Report vergleicht die aktuelle Berechnung mit einer Basis-Version (`r basename(basis_file)`).
+
+**Basis-Version:** `r basename(basis_file)`  
+**Aktuelle Version:** `r basename(current_file)`  
+**Generiert:** `r format(Sys.time(), "%d.%m.%Y %H:%M:%S")`
+
+### Gesamtübersicht
+
+Die folgende Tabelle zeigt die wichtigsten KPIs im Vergleich:
+
+```{r summary-table}
+summary_table <- comparison |>
+  select(product_id, sq_basis, sq, sq_change, cr_basis, cr, cr_change) |>
+  mutate(
+    across(c(sq_basis, sq, sq_change, cr_basis, cr, cr_change), ~round(., 4))
+  )
+
+colnames(summary_table) <- c(
+  "Produkt",
+  "SQ (Basis)", "SQ (Aktuell)", "SQ Diff %",
+  "CR (Basis)", "CR (Aktuell)", "CR Diff %"
+)
+
+knitr::kable(summary_table, caption = "KPI Vergleich: Basis vs. Aktuell")
+```
+
+---
+
+## Detaillierte Pro-Produkt Analyse
+
+```{r product-analysis, results='asis'}
+products <- unique(current_data$product_id)
+
+for (prod in products) {
+  basis_prod <- basis_data |> filter(product_id == prod)
+  current_prod <- current_data |> filter(product_id == prod)
+  
+  cat(glue::glue("\n### Produkt: {prod}\n\n"))
+  
+  cat("#### Kennzahlen\n\n")
+  
+  # Kleine Tabelle für dieses Produkt
+  prod_table <- data.frame(
+    Metrik = c("Schadenquote (SQ)", "Combined Ratio (CR)", "Bestand", "NVP", "Verdiente Prämie"),
+    Basis = c(
+      round(basis_prod$sq, 4),
+      round(basis_prod$cr, 4),
+      round(basis_prod$bestand, 0),
+      round(basis_prod$nvp, 2),
+      round(basis_prod$vp, 2)
+    ),
+    Aktuell = c(
+      round(current_prod$sq, 4),
+      round(current_prod$cr, 4),
+      round(current_prod$bestand, 0),
+      round(current_prod$nvp, 2),
+      round(current_prod$vp, 2)
+    )
+  )
+  
+  print(knitr::kable(prod_table, caption = glue::glue("KPIs für {prod}")))
+  cat("\n\n")
+  
+  # Bewertung
+  sq_change <- ((current_prod$sq - basis_prod$sq) / basis_prod$sq) * 100
+  cr_change <- ((current_prod$cr - basis_prod$cr) / basis_prod$cr) * 100
+  
+  cat("#### Bewertung\n\n")
+  
+  if (abs(sq_change) < 5) {
+    sq_status <- "✅ Schadenquote stabil"
+  } else if (sq_change > 0) {
+    sq_status <- glue::glue("⚠️ Schadenquote um {round(sq_change, 1)}% gestiegen")
+  } else {
+    sq_status <- glue::glue("✅ Schadenquote um {round(abs(sq_change), 1)}% verbessert")
+  }
+  
+  if (abs(cr_change) < 5) {
+    cr_status <- "✅ Combined Ratio stabil"
+  } else if (cr_change > 0) {
+    cr_status <- glue::glue("⚠️ Combined Ratio um {round(cr_change, 1)}% gestiegen")
+  } else {
+    cr_status <- glue::glue("✅ Combined Ratio um {round(abs(cr_change), 1)}% verbessert")
+  }
+  
+  cat(glue::glue("- {sq_status}\n"))
+  cat(glue::glue("- {cr_status}\n\n"))
+}
+```
+
+---
+
+## Grafische Übersicht
+
+```{r plot-changes, fig.width=10, fig.height=6, fig.dpi=100}
+library(ggplot2)
+library(tidyr)
+
+plot_data <- comparison |>
+  select(product_id, sq_change, cr_change) |>
+  pivot_longer(
+    cols = c(sq_change, cr_change),
+    names_to = "metric",
+    values_to = "change_pct"
+  ) |>
+  mutate(
+    metric = ifelse(metric == "sq_change", "Schadenquote (SQ)", "Combined Ratio (CR)"),
+    color = ifelse(change_pct > 0, "Verschlechtert", "Verbessert")
+  )
+
+p <- ggplot(plot_data, aes(x = reorder(product_id, change_pct), y = change_pct, fill = color)) +
+  geom_col() +
+  geom_hline(yintercept = 0, color = "black", linewidth = 1) +
+  facet_wrap(~metric, scales = "free_x") +
+  scale_fill_manual(
+    values = c("Verbessert" = "#2ecc71", "Verschlechtert" = "#e74c3c"),
+    name = "Trend"
+  ) +
+  labs(
+    title = "KPI-Änderungen: Basis vs. Aktuell",
+    x = "Produkt",
+    y = "Änderung (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major.y = element_line(color = "gray90")
+  )
+
+print(p)
+```
+
+---
+
+## Fazit
+
+Dieser Report dokumentiert die Unterschiede zwischen der Basis-Version und der aktuellen Berechnung. 
+Die detaillierte Pro-Produkt Analyse ermöglicht eine fundierte Bewertung der Veränderungen.
+
+**Report generiert automatisch von der Budget & Hochrechnung PoC Anwendung**
