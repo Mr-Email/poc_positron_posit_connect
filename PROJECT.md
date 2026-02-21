@@ -85,7 +85,8 @@ poc_positron_posit_connect/
 ├── app.R                        # (Optional) Shiny-Dashboard
 ├── data/raw/                    # Input-CSVs mit Versionierung
 ├── output/                      # Generierte Reports & Daten
-└── tests/testthat/              # Unit-Tests
+└── test/                        # 🔒 ISOLIERT: Unit & Integration Tests
+                                 # (Nicht Teil der Pipeline-Änderungen)
 ```
 
 ### Tech-Stack
@@ -217,7 +218,7 @@ tar_target(validated_inputs, {
 
 ---
 
-### ✅ Phase 2: targets-Pipeline (FERTIG)
+### ✅ Phase 2: targets-Pipeline (IN ARBEIT)
 - [x] `_targets.R` – DAG-Definition implementiert
   - [x] `get_latest_input_path()` implementiert
   - [x] File-basierte Targets für alle 4 Inputs
@@ -226,20 +227,27 @@ tar_target(validated_inputs, {
   - [x] `berechnung` Target
   - [x] `output_file` Target
 - [x] Integration mit bestehenden R-Funktionen getestet
-- [x] Partial-Update Szenario getestet: v2 von nur einem Input
-- [x] targets-DAG visualisierbar: `tar_visnetwork()`
+- [ ] Partial-Update Szenario: Validierung ausstehend
+- [ ] targets-DAG Fehlerbehandlung optimieren
+- [ ] Alle Test-Szenarien erfolgreich durchlaufen
 
-**Status**: ✅ **ERFOLGREICH GETESTET!**
+**Status**: 🔄 **IN ARBEIT – Tests teils erfolgreich, Optimierungen notwendig**
 
 **Test-Ergebnisse**:
 ```
-# Beispielhafte Test-Ergebnisse
+# Aktuelle Test-Ergebnisse (Partial Update)
 
-1. tar_make() mit v1 aller Inputs → Alle Targets berechnet
-2. Input_Rabatt_v002.csv hinzufügen
-3. tar_make() → Nur rabatt* Targets invalidiert, andere aus Cache
-4. Validierung & Berechnung erfolgreich
+1. ✅ tar_make() mit v1 aller Inputs → Alle Targets berechnet
+2. ✅ Input_Rabatt_v002.csv hinzufügen
+3. ✅ tar_make() → Nur rabatt* Targets invalidiert, andere gecacht
+4. ⚠️ Validierung bei Partial Update: Warnung statt Fehler
+5. ❌ Berechnung bei fehlendem SAP_v002: Mismatch in Datenstruktur
 ```
+
+**Nächste Schritte**:
+- Validierungslogik für Partial Updates verfeinern
+- SAP-Daten Handling bei unterschiedlichen Versionen testen
+- Fehlerbehandlung in Combined Inputs robuster machen
 
 ---
 
@@ -280,22 +288,32 @@ tar_target(validated_inputs, {
 
 ## Testing-Strategie
 
+### ⚠️ Test-Ordner: Read-Only für Pipeline
+
+**Wichtig**: Der `test/`-Ordner wird von Pipeline-Änderungen NICHT beeinflusst:
+- ✅ Tests laufen unabhängig von `_targets.R`
+- ✅ Input-Versionierung triggert KEINE Test-Updates
+- ✅ `tar_make()` verändert niemals Dateien in `test/`
+- ✅ Test-Fehler stoppen Pipeline NICHT (separate CI/CD)
+
+**Konsequenz**: Wenn Tests aktualisiert werden müssen → Manuell im `test/`-Ordner bearbeiten, nicht automatisiert.
+
 ### Unit Tests (testthat)
-- `test_01_load_data.R` – CSV-Laden
-- `test_02_validate_data.R` – Validierungsregeln
-- `test_03_calculate.R` – Formelwerk
-- `test_workflow.R` – Load → Validate → Calculate
+- `test/test_01_load_data.R` – CSV-Laden
+- `test/test_02_validate_data.R` – Validierungsregeln
+- `test/test_03_calculate.R` – Formelwerk
+- `test/test_workflow.R` – Load → Validate → Calculate
 
 ### Integration Tests
-- targets-Pipeline mit Versioning
-- Partial Updates (nur 1 Input geändert)
-- Fehler-Szenarien
+- `test/test_pipeline_1.R` – targets-Caching & Partial Updates
+- Laufen separat: `source("test/test_pipeline_1.R")`
+- Nicht Teil von `tar_make()`
 
 ---
 
 ## Status
 
-🔄 **Phase 1 ✅ → Phase 2 aktuell**: targets-Pipeline mit intelligentem Caching
+🔄 **Phase 1 ✅ → Phase 2 IN ARBEIT**: targets-Pipeline mit intelligentem Caching wird optimiert
 
 ---
 

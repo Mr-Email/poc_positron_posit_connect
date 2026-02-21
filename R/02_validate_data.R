@@ -21,45 +21,62 @@ validate_all_inputs <- function(inputs) {
   errors <- c()
   
   # Validate each input file
-  warnings <- c(warnings, validate_file(inputs$hochrechnung, "hochrechnung"))
-  warnings <- c(warnings, validate_file(inputs$rabatt, "rabatt"))
-  warnings <- c(warnings, validate_file(inputs$betriebskosten, "betriebskosten"))
-  warnings <- c(warnings, validate_file(inputs$sap, "sap"))
+  file_errors <- validate_file(inputs$hochrechnung, "hochrechnung")
+  errors <- c(errors, file_errors$errors)
+  warnings <- c(warnings, file_errors$warnings)
   
-  # Validate business rules
-  warnings <- c(warnings, validate_business_rules(inputs))
+  file_errors <- validate_file(inputs$rabatt, "rabatt")
+  errors <- c(errors, file_errors$errors)
+  warnings <- c(warnings, file_errors$warnings)
+  
+  file_errors <- validate_file(inputs$betriebskosten, "betriebskosten")
+  errors <- c(errors, file_errors$errors)
+  warnings <- c(warnings, file_errors$warnings)
+  
+  file_errors <- validate_file(inputs$sap, "sap")
+  errors <- c(errors, file_errors$errors)
+  warnings <- c(warnings, file_errors$warnings)
+  
+  # Validate business rules (nur wenn keine kritischen Fehler)
+  if (length(errors) == 0) {
+    warnings <- c(warnings, validate_business_rules(inputs))
+  }
   
   # Remove NULL/empty warnings
   warnings <- warnings[!is.null(warnings) & warnings != ""]
   
   list(
-    success = TRUE,  # Pipeline läuft weiter (Warnings statt Errors)
+    success = length(errors) == 0,  # ← Nur TRUE wenn NO ERRORS
     warnings = if (length(warnings) > 0) warnings else NULL,
-    errors = errors
+    errors = if (length(errors) > 0) errors else NULL
   )
 }
 
 # ============================================================================
-# File-Level Validation
+# File-Level Validation (GEÄNDERT: Return list mit errors + warnings)
 # ============================================================================
 
 validate_file <- function(data, file_key) {
   warnings <- c()
+  errors <- c()
   
   if (!is.data.frame(data)) {
-    return(glue::glue("FEHLER: {file_key} ist kein Data Frame"))
+    errors <- c(errors, glue::glue("❌ {file_key}: Ist kein Data Frame"))
+    return(list(warnings = warnings, errors = errors))
   }
   
   # Get expected columns from config
   file_config <- INPUT_FILES[[file_key]]
   expected_cols <- file_config$columns
   
-  # Check: Pflicht-Spalten vorhanden?
+  # Check: Pflicht-Spalten vorhanden? (JETZT ERRORS statt WARNINGS!)
   missing_cols <- setdiff(expected_cols, names(data))
   if (length(missing_cols) > 0) {
-    warnings <- c(warnings, glue::glue(
-      "⚠️ {file_key}: Spalten fehlen: {paste(missing_cols, collapse = ', ')}"
+    errors <- c(errors, glue::glue(
+      "❌ {file_key}: Spalten fehlen: {paste(missing_cols, collapse = ', ')}"
     ))
+    # STOP HERE - keine weiteren Checks wenn Spalten fehlen!
+    return(list(warnings = warnings, errors = errors))
   }
   
   # Check: Keine NAs in Pflicht-Spalten
@@ -92,11 +109,11 @@ validate_file <- function(data, file_key) {
     }
   }
   
-  warnings
+  list(warnings = warnings, errors = errors)
 }
 
 # ============================================================================
-# Business Rules Validation
+# Business Rules Validation (GEÄNDERT: Return vector, nicht list)
 # ============================================================================
 
 validate_business_rules <- function(inputs) {

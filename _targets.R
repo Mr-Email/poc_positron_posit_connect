@@ -2,108 +2,99 @@
 # TARGETS PIPELINE - Elegant mit versionierten Dateien
 # ============================================================================
 
-# Unterdrücke renv "out-of-sync" Warnung (optional)
 Sys.setenv(RENV_VERBOSE = "false")
 
 library(targets)
 library(readr)
 library(glue)
 library(stringr)
-library()
+library(tarchetypes)
 
-# Load configuration and functions
+# Load config & helper functions
 source("R/00_config.R")
 source("R/01_load_data.R")
 source("R/02_validate_data.R")
 source("R/03_calculate.R")
 
-# ============================================================================
-# targets Configuration
-# ============================================================================
+# Helper: Get latest input file version
+get_latest_input_path <- function(input_name) {
+  pattern <- glue::glue("^{input_name}_v\\d+\\.csv$")
+  files <- list.files("data/raw", pattern = pattern, full.names = TRUE)
+  
+  if (length(files) == 0) {
+    stop(glue::glue("Keine {input_name} Dateien gefunden"))
+  }
+  
+  # Extract version numbers and return path with highest version
+  versions <- stringr::str_extract(basename(files), "\\d+") |> as.numeric()
+  files[which.max(versions)]
+}
+
+# Helper: Initialize log file
+init_logfile <- function() {
+  if (!dir.exists("output")) {
+    dir.create("output", showWarnings = FALSE)
+  }
+  timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+  logfile <- glue::glue("output/pipeline_{timestamp}.log")
+  logfile
+}
+
 targets::tar_config_set(
   store = "_targets",
   script = "_targets.R"
 )
 
 # ============================================================================
-# Helper: Get latest input file version
-# ============================================================================
-get_latest_input_path <- function(input_name) {
-  pattern <- glue::glue("^{input_name}_v\\d+\\.csv$")
-  files <- list.files("data/raw", pattern = pattern, full.names = TRUE)
-  
-  if (length(files) == 0) {
-    stop(glue::glue("Keine {input_name} Dateien in data/raw/ gefunden"))
-  }
-  
-  # Extract version numbers and return file with highest version
-  versions <- str_extract(basename(files), "\\d+") |> as.numeric()
-  files[which.max(versions)]
-}
-
-# ============================================================================
-# Pipeline Definition
+# Define pipeline
 # ============================================================================
 list(
+  # Track all input files (triggers rebuild if ANY file changes)
+  tar_files(
+    input_files_changed,
+    list.files("data/raw", pattern = "^Input_.*\\.csv$", full.names = TRUE)
+  ),
   
-  # -------------------------------------------------------------------------
-  # STAGE 1: File Path Resolution
-  # Tracks which input files exist and triggers updates on file changes
-  # -------------------------------------------------------------------------
-  
+  # File paths depend on input_files_changed
   tar_target(
     hochrechnung_path,
-    get_latest_input_path("Input_Hochrechnung"),
-    format = "file"
+    {
+      input_files_changed  # Force dependency
+      get_latest_input_path("Input_Hochrechnung")
+    }
   ),
   
   tar_target(
     rabatt_path,
-    get_latest_input_path("Input_Rabatt"),
-    format = "file"
+    {
+      input_files_changed
+      get_latest_input_path("Input_Rabatt")
+    }
   ),
   
   tar_target(
     betriebskosten_path,
-    get_latest_input_path("Input_Betriebskosten"),
-    format = "file"
+    {
+      input_files_changed
+      get_latest_input_path("Input_Betriebskosten")
+    }
   ),
   
   tar_target(
     sap_path,
-    get_latest_input_path("Input_SAP"),
-    format = "file"
+    {
+      input_files_changed
+      get_latest_input_path("Input_SAP")
+    }
   ),
   
-  # -------------------------------------------------------------------------
-  # STAGE 2: Data Loading
-  # Only re-loads when corresponding *_path target changes
-  # -------------------------------------------------------------------------
+  # Load data
+  tar_target(hochrechnung, load_csv(hochrechnung_path)),
+  tar_target(rabatt, load_csv(rabatt_path)),
+  tar_target(betriebskosten, load_csv(betriebskosten_path)),
+  tar_target(sap, load_csv(sap_path)),
   
-  tar_target(
-    hochrechnung,
-    load_csv(hochrechnung_path)
-  ),
-  
-  tar_target(
-    rabatt,
-    load_csv(rabatt_path)
-  ),
-  
-  tar_target(
-    betriebskosten,
-    load_csv(betriebskosten_path)
-  ),
-  
-  tar_target(
-    sap,
-    load_csv(sap_path)
-  ),
-  
-  # -------------------------------------------------------------------------
-  # STAGE 3: Input Combination
-  # -------------------------------------------------------------------------
-  
+  # Combine
   tar_target(
     inputs_combined,
     list(
@@ -114,55 +105,97 @@ list(
     )
   ),
   
-  # -------------------------------------------------------------------------
-  # STAGE 4: Validation
-  # Logs warnings but continues pipeline (failure = warnings only)
-  # -------------------------------------------------------------------------
-  
+  # Validate - mit Logging
   tar_target(
     validation_result,
-    validate_all_inputs(inputs_combined)
+    {
+      result <- validate_all_inputs(inputs_combined)
+      
+      # Log Validierungsergebnis
+      log_msg <- glue::glue("[{format(Sys.time(), '%Y-%m-%d %H:%M:%S')}] VALIDIERUNG")
+      
+      if (result$success) {
+        log_msg <- glue::glue("{log_msg}: ✅ ERFOLGREICH")
+        cat("\n✅ VALIDIERUNG ERFOLGREICH\n")
+      } else {
+        log_msg <- glue::glue("{log_msg}: ⚠️ MIT WARNUNGEN")
+        cat("\n⚠️ VALIDIERUNG MIT WARNUNGEN\n")
+        if (!is.null(result$warnings) && length(result$warnings) > 0) {
+          cat("Warnungen:\n")
+          cat(paste("  -", result$warnings, collapse = "\n"))
+          cat("\n")
+          log_msg <- glue::glue("{log_msg}\nWarnungen:\n{paste('  -', result$warnings, collapse = '\n')}")
+        }
+      }
+      
+      # Schreibe in Logfile
+      write(log_msg, file = logfile, append = TRUE)
+      
+      result
+    }
   ),
   
   tar_target(
     validated_inputs,
     {
-      # Log warnings if any
-      if (!is.null(validation_result$warnings) && length(validation_result$warnings) > 0) {
-        for (warning_msg in validation_result$warnings) {
-          warning(warning_msg)
-        }
+      result <- validation_result
+      if (!result$success && !is.null(result$errors) && length(result$errors) > 0) {
+        log_msg <- glue::glue(
+          "[{format(Sys.time(), '%Y-%m-%d %H:%M:%S')}] ❌ VALIDIERUNG FEHLGESCHLAGEN\n",
+          "Fehler:\n{paste('  -', result$errors, collapse = '\n')}"
+        )
+        write(log_msg, file = logfile, append = TRUE)
+        stop(glue::glue(
+          "Validierung fehlgeschlagen:\n{paste('  -', result$errors, collapse = '\n')}"
+        ))
       }
-      # Pipeline läuft weiter (success = TRUE)
       inputs_combined
     }
   ),
   
-  # -------------------------------------------------------------------------
-  # STAGE 5: Calculation
-  # Computes all metrics based on validated inputs
-  # -------------------------------------------------------------------------
-  
+  # Calculate
   tar_target(
     berechnung,
-    calculate_budget(validated_inputs)
+    {
+      log_msg <- glue::glue("[{format(Sys.time(), '%Y-%m-%d %H:%M:%S')}] BERECHNUNG: ✅ GESTARTET")
+      write(log_msg, file = logfile, append = TRUE)
+      calculate_budget(validated_inputs)
+    }
   ),
   
-  # -------------------------------------------------------------------------
-  # STAGE 6: Output Export
-  # Saves combined data with calculations to CSV
-  # -------------------------------------------------------------------------
-  
+  # Output
   tar_target(
     output_file,
     {
-      timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-      file_path <- glue::glue("output/berechnung_{timestamp}.csv")
-      dir.create("output", showWarnings = FALSE)
+      if (!dir.exists("output")) {
+        dir.create("output", showWarnings = FALSE)
+      }
       
-      write_csv(berechnung, file_path)
-      file_path
-    },
-    format = "file"
+      timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+      filename <- glue::glue("output/berechnung_{timestamp}.csv")
+      readr::write_csv(berechnung, filename)
+      
+      # Log Output-Generierung
+      log_msg <- glue::glue("[{format(Sys.time(), '%Y-%m-%d %H:%M:%S')}] OUTPUT: ✅ {filename} generiert")
+      write(log_msg, file = logfile, append = TRUE)
+      
+      filename
+    }
+  ),
+  
+  # Initialize logfile - MUSS bei jedem Run neu erstellt werden
+  tar_target(
+    logfile,
+    {
+      # Force re-evaluation: Hänge Dateiabhängigkeit an
+      input_files_changed
+      
+      if (!dir.exists("output")) {
+        dir.create("output", showWarnings = FALSE)
+      }
+      timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+      logfile_path <- glue::glue("output/pipeline_{timestamp}.log")
+      logfile_path
+    }
   )
 )
