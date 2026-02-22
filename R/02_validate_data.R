@@ -1,198 +1,183 @@
-# ============================================================================
-# VALIDATE: Datenvalidierung mit Warnings (pointblanc-Ready)
-# ============================================================================
-# HINWEIS: Diese Funktion ist vorbereitet für zukünftige Integration mit pointblanc
-# Aktuell: Warnings bei Validierungsfehlern, Pipeline läuft weiter
-# TODO: Mit pointblanc ersetzen für schönere Darstellung und erweiterte Features
-
+library(pointblank)
 library(dplyr)
 library(glue)
 
-source("R/00_config.R")
-
 # ============================================================================
-# Main Validation Function
+# VALIDIERUNG MIT POINTBLANK + MANUELLE BUSINESS RULES
 # ============================================================================
 
+#' Validate all inputs using pointblank
+#'
+#' @param inputs List of data frames (hochrechnung, rabatt, betriebskosten, sap)
+#'
+#' @return List with validation results and agents
+#'
 validate_all_inputs <- function(inputs) {
-  # Returns list: list(success = TRUE/FALSE, warnings = c(...), errors = c(...))
   
-  warnings <- c()
-  errors <- c()
+  cat("\n[VALIDATE] Starte Validierung mit pointblank...\n")
   
-  # Validate each input file
-  file_errors <- validate_file(inputs$hochrechnung, "hochrechnung")
-  errors <- c(errors, file_errors$errors)
-  warnings <- c(warnings, file_errors$warnings)
-  
-  file_errors <- validate_file(inputs$rabatt, "rabatt")
-  errors <- c(errors, file_errors$errors)
-  warnings <- c(warnings, file_errors$warnings)
-  
-  file_errors <- validate_file(inputs$betriebskosten, "betriebskosten")
-  errors <- c(errors, file_errors$errors)
-  warnings <- c(warnings, file_errors$warnings)
-  
-  file_errors <- validate_file(inputs$sap, "sap")
-  errors <- c(errors, file_errors$errors)
-  warnings <- c(warnings, file_errors$warnings)
-  
-  # Validate business rules (nur wenn keine kritischen Fehler)
-  if (length(errors) == 0) {
-    warnings <- c(warnings, validate_business_rules(inputs))
-  }
-  
-  # Remove NULL/empty warnings
-  warnings <- warnings[!is.null(warnings) & warnings != ""]
-  
-  list(
-    success = length(errors) == 0,  # ← Nur TRUE wenn NO ERRORS
-    warnings = if (length(warnings) > 0) warnings else NULL,
-    errors = if (length(errors) > 0) errors else NULL
+  results <- list(
+    success = TRUE,
+    errors = NULL,
+    warnings = NULL,
+    agents = list()
   )
+  
+  error_list <- c()
+  
+  # ========== HOCHRECHNUNG VALIDIERUNG ==========
+  cat("[VALIDATE] Validiere Hochrechnung...\n")
+  
+  # 1. Prüfe negative Werte MANUELL
+  if (any(inputs$hochrechnung$bestand < 0, na.rm = TRUE)) {
+    neg_rows <- which(inputs$hochrechnung$bestand < 0)
+    error_list <- c(error_list, 
+                   glue::glue("Hochrechnung: Negative Bestandswerte in Zeilen {paste(neg_rows, collapse=', ')}"))
+    cat("[VALIDATE] ❌ Negative Bestandswerte gefunden!\n")
+  }
+  
+  if (any(inputs$hochrechnung$bvp < 0, na.rm = TRUE)) {
+    neg_rows <- which(inputs$hochrechnung$bvp < 0)
+    error_list <- c(error_list, 
+                   glue::glue("Hochrechnung: Negative BVP-Werte in Zeilen {paste(neg_rows, collapse=', ')}"))
+    cat("[VALIDATE] ❌ Negative BVP-Werte gefunden!\n")
+  }
+  
+  # 2. Pointblank für Standard-Prüfungen
+  agent_hochrechnung <- pointblank::create_agent(
+    tbl = inputs$hochrechnung
+  ) |>
+    pointblank::col_exists(columns = c("product_id", "bestand", "bvp", "nvl")) |>
+    pointblank::col_is_numeric(columns = c("bestand", "bvp", "nvl")) |>
+    pointblank::interrogate()
+  
+  results$agents$hochrechnung <- agent_hochrechnung
+  
+  # ========== RABATT VALIDIERUNG ==========
+  cat("[VALIDATE] Validiere Rabatt...\n")
+  
+  # 1. Prüfe Rabatt > 100% MANUELL
+  if (any(inputs$rabatt$fam_rab > 100, na.rm = TRUE)) {
+    bad_rows <- which(inputs$rabatt$fam_rab > 100)
+    error_list <- c(error_list, 
+                   glue::glue("Rabatt: fam_rab > 100% in Zeilen {paste(bad_rows, collapse=', ')}"))
+    cat("[VALIDATE] ❌ Familienrabatt > 100% gefunden!\n")
+  }
+  
+  if (any(inputs$rabatt$mj_rab > 100, na.rm = TRUE)) {
+    bad_rows <- which(inputs$rabatt$mj_rab > 100)
+    error_list <- c(error_list, 
+                   glue::glue("Rabatt: mj_rab > 100% in Zeilen {paste(bad_rows, collapse=', ')}"))
+    cat("[VALIDATE] ❌ Mehrjährig-Rabatt > 100% gefunden!\n")
+  }
+  
+  # 2. Pointblank für Standard-Prüfungen
+  agent_rabatt <- pointblank::create_agent(
+    tbl = inputs$rabatt
+  ) |>
+    pointblank::col_exists(columns = c("product_id", "fam_rab", "mj_rab")) |>
+    pointblank::col_is_numeric(columns = c("fam_rab", "mj_rab")) |>
+    pointblank::interrogate()
+  
+  results$agents$rabatt <- agent_rabatt
+  
+  # ========== BETRIEBSKOSTEN VALIDIERUNG ==========
+  cat("[VALIDATE] Validiere Betriebskosten...\n")
+  
+  agent_betriebskosten <- pointblank::create_agent(
+    tbl = inputs$betriebskosten
+  ) |>
+    pointblank::col_exists(columns = c("product_id", "bk", "sm")) |>
+    pointblank::col_is_numeric(columns = c("bk", "sm")) |>
+    pointblank::interrogate()
+  
+  results$agents$betriebskosten <- agent_betriebskosten
+  
+  # ========== SAP VALIDIERUNG ==========
+  cat("[VALIDATE] Validiere SAP...\n")
+  
+  agent_sap <- pointblank::create_agent(
+    tbl = inputs$sap
+  ) |>
+    pointblank::col_exists(columns = c("product_id", "sap", "advo", "pd")) |>
+    pointblank::col_is_numeric(columns = c("sap", "advo", "pd")) |>
+    pointblank::interrogate()
+  
+  results$agents$sap <- agent_sap
+  
+  # ========== AUSWERTUNG ==========
+  if (length(error_list) > 0) {
+    results$success <- FALSE
+    results$errors <- error_list
+    cat(glue::glue("[VALIDATE] ❌ {length(error_list)} Validierungsfehler gefunden\n"))
+  } else {
+    results$success <- TRUE
+    cat("[VALIDATE] ✅ Alle Validierungen bestanden\n")
+  }
+  
+  cat("[VALIDATE] Validierung abgeschlossen\n\n")
+  
+  results
 }
 
-# ============================================================================
-# File-Level Validation (GEÄNDERT: Return list mit errors + warnings)
-# ============================================================================
+#' Get pointblank validation report as HTML
+#'
+#' @param agent Pointblank agent object
+#'
+#' @return HTML string for report display
+#'
+get_validation_report_html <- function(agent) {
+  
+  if (is.null(agent)) {
+    return("<div class='alert alert-info'>Keine Validierung durchgeführt</div>")
+  }
+  
+  # Generiere HTML-Report
+  tryCatch({
+    report_html <- pointblank::get_agent_report(
+      agent,
+      arrange_by = "eval"
+    )
+    
+    # Konvertiere zu HTML-String
+    html_string <- knitr::kable(report_html, format = "html")
+    html_string
+    
+  }, error = function(e) {
+    glue::glue("<div class='alert alert-danger'>Fehler beim Report: {e$message}</div>")
+  })
+}
 
+#' Validate single file with pointblank
+#'
+#' @param data Data frame to validate
+#' @param file_key Key to determine validation rules
+#'
+#' @return Pointblank agent
+#'
 validate_file <- function(data, file_key) {
-  warnings <- c()
-  errors <- c()
   
-  if (!is.data.frame(data)) {
-    errors <- c(errors, glue::glue("❌ {file_key}: Ist kein Data Frame"))
-    return(list(warnings = warnings, errors = errors))
+  agent <- pointblank::create_agent(
+    tbl = data
+  )
+  
+  # Basis-Validierungen für alle Dateien
+  agent <- agent |>
+    pointblank::col_exists(columns = "product_id")
+  
+  # Spezifische Validierungen je nach Dateityp
+  if (grepl("Hochrechnung", file_key)) {
+    agent <- agent |>
+      pointblank::col_is_numeric(columns = c("bestand", "bvp", "nvl")) |>
+      pointblank::col_vals_gt(columns = "bestand", value = 0) |>
+      pointblank::col_vals_gt(columns = "bvp", value = 0)
   }
   
-  # Get expected columns from config
-  file_config <- INPUT_FILES[[file_key]]
-  expected_cols <- file_config$columns
-  
-  # Check: Pflicht-Spalten vorhanden? (JETZT ERRORS statt WARNINGS!)
-  missing_cols <- setdiff(expected_cols, names(data))
-  if (length(missing_cols) > 0) {
-    errors <- c(errors, glue::glue(
-      "❌ {file_key}: Spalten fehlen: {paste(missing_cols, collapse = ', ')}"
-    ))
-    # STOP HERE - keine weiteren Checks wenn Spalten fehlen!
-    return(list(warnings = warnings, errors = errors))
+  if (grepl("Rabatt", file_key)) {
+    agent <- agent |>
+      pointblank::col_is_numeric(columns = c("fam_rab", "mj_rab")) |>
+      pointblank::col_vals_between(columns = "fam_rab", left = 0, right = 100)
   }
   
-  # Check: Keine NAs in Pflicht-Spalten
-  for (col in expected_cols) {
-    if (col %in% names(data) && any(is.na(data[[col]]))) {
-      na_count <- sum(is.na(data[[col]]))
-      warnings <- c(warnings, glue::glue(
-        "⚠️ {file_key}: {na_count} NA-Werte in Spalte '{col}'"
-      ))
-    }
-  }
-  
-  # Check: Keine Duplikate bei product_id
-  if ("product_id" %in% names(data)) {
-    dups <- sum(duplicated(data$product_id))
-    if (dups > 0) {
-      warnings <- c(warnings, glue::glue(
-        "⚠️ {file_key}: {dups} doppelte product_id Einträge"
-      ))
-    }
-  }
-  
-  # Check: Alle 5 Produkte vorhanden
-  if ("product_id" %in% names(data)) {
-    missing_products <- setdiff(VALID_PRODUCTS, data$product_id)
-    if (length(missing_products) > 0) {
-      warnings <- c(warnings, glue::glue(
-        "⚠️ {file_key}: Produkte fehlen: {paste(missing_products, collapse = ', ')}"
-      ))
-    }
-  }
-  
-  list(warnings = warnings, errors = errors)
+  agent |> pointblank::interrogate()
 }
-
-# ============================================================================
-# Business Rules Validation (GEÄNDERT: Return vector, nicht list)
-# ============================================================================
-
-validate_business_rules <- function(inputs) {
-  warnings <- c()
-  
-  # HOCHRECHNUNG: bestand > 0
-  if ("hochrechnung" %in% names(inputs)) {
-    hr <- inputs$hochrechnung
-    invalid <- which(hr$bestand <= 0)
-    if (length(invalid) > 0) {
-      warnings <- c(warnings, glue::glue(
-        "⚠️ Hochrechnung: {length(invalid)} Zeile(n) mit bestand ≤ 0"
-      ))
-    }
-  }
-  
-  # HOCHRECHNUNG: bvp > 0
-  if ("hochrechnung" %in% names(inputs)) {
-    hr <- inputs$hochrechnung
-    invalid <- which(hr$bvp <= 0)
-    if (length(invalid) > 0) {
-      warnings <- c(warnings, glue::glue(
-        "⚠️ Hochrechnung: {length(invalid)} Zeile(n) mit bvp ≤ 0"
-      ))
-    }
-  }
-  
-  # RABATT: fam_rab + mj_rab < 100
-  if ("rabatt" %in% names(inputs)) {
-    rab <- inputs$rabatt
-    rab$total_rab <- rab$fam_rab + rab$mj_rab
-    invalid <- which(rab$total_rab >= 100)
-    if (length(invalid) > 0) {
-      invalid_products <- rab$product_id[invalid]
-      warnings <- c(warnings, glue::glue(
-        "⚠️ Rabatt: {paste(invalid_products, collapse = ', ')} hat Gesamtrabatt ≥ 100%"
-      ))
-    }
-  }
-  
-  # BETRIEBSKOSTEN: sm zwischen 0.5 und 1.5
-  if ("betriebskosten" %in% names(inputs)) {
-    bk <- inputs$betriebskosten
-    invalid <- which(bk$sm < 0.5 | bk$sm > 1.5)
-    if (length(invalid) > 0) {
-      invalid_products <- bk$product_id[invalid]
-      warnings <- c(warnings, glue::glue(
-        "⚠️ Betriebskosten: {paste(invalid_products, collapse = ', ')} hat sm außerhalb [0.5, 1.5]"
-      ))
-    }
-  }
-  
-  # BETRIEBSKOSTEN: bk >= 0
-  if ("betriebskosten" %in% names(inputs)) {
-    bk <- inputs$betriebskosten
-    invalid <- which(bk$bk < 0)
-    if (length(invalid) > 0) {
-      invalid_products <- bk$product_id[invalid]
-      warnings <- c(warnings, glue::glue(
-        "⚠️ Betriebskosten: {paste(invalid_products, collapse = ', ')} hat negative bk"
-      ))
-    }
-  }
-  
-  warnings
-}
-
-# ============================================================================
-# Future Integration: pointblanc
-# ============================================================================
-# TODO: Diese Funktion mit pointblanc ersetzen für:
-# - Elegantere Regel-Definition
-# - Strukturierte Validierungsreports
-# - Interaktive Fehlervisualisierung
-#
-# Beispiel (Pseudo-Code):
-# pointblanc::add_rule(
-#   name = "bestand_positive",
-#   description = "Bestand muss > 0 sein",
-#   rule_fn = function(x) x$bestand > 0,
-#   level = "warning"  # oder "error"
-# )

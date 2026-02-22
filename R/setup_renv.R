@@ -37,7 +37,7 @@ setup_renv <- function(reinstall = FALSE) {
     
     # Workflow & Validierung
     targets = "latest",
-    pointblanc = "latest",
+    pointblank = "latest",  # ← Korrigiert: pointblanc → pointblank
     
     # Testing & Reporting
     testthat = "latest",
@@ -133,7 +133,7 @@ check_dependencies <- function() {
   required_packages <- c(
     "shiny", "dplyr", "reactable", "bslib", "targets",
     "glue", "readr", "ggplot2", "tidyr", "stringr",
-    "scales", "pointblanc", "testthat", "knitr", "quarto"
+    "scales", "pointblank", "testthat", "knitr", "quarto"  # ← Korrigiert
   )
   
   missing <- c()
