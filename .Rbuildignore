@@ -1,0 +1,11 @@
+^renv$
+^renv\.lock$
+^\.Rbuildignore$
+^\.gitignore$
+^data/
+^output/
+^_targets/
+^\.Rhistory$
+^\.RData$
+^test/
+^\.env$

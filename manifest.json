@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "platform": "4.2.0",
+  "metadata": {
+    "appmode": "shiny",
+    "entrypoint": "app.R",
+    "displayName": "Budget & Hochrechnung",
+    "bundleType": "shiny"
+  },
+  "files": {
+    "app.R": {
+      "checksum": ""
+    },
+    "R/00_config.R": {
+      "checksum": ""
+    },
+    "R/01_load_data.R": {
+      "checksum": ""
+    },
+    "R/02_validate_data.R": {
+      "checksum": ""
+    },
+    "R/03_calculate.R": {
+      "checksum": ""
+    },
+    "R/00_dummy_config.R": {
+      "checksum": ""
+    },
+    "report.qmd": {
+      "checksum": ""
+    },
+    "_targets.R": {
+      "checksum": ""
+    },
+    "renv.lock": {
+      "checksum": ""
+    }
+  }
+}
