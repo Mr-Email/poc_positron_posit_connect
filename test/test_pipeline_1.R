@@ -35,10 +35,16 @@ cat("\nStep 4-5: New input & pipeline\n")
 old_v003 <- list.files("data/raw", pattern = "_v003\\.csv$", full.names = TRUE)
 if (length(old_v003) > 0) unlink(old_v003)
 
-# Generate new v004 files (oder höher)
+# Generate new input files
 source("R/00_generate_dummy_data.R")
 
-# Record output count BEFORE (nur bu_v*.csv Dateien)
+# WICHTIG: Invalidiere Input-Targets manuell
+targets::tar_invalidate(input_hochrechnung_path)
+targets::tar_invalidate(input_rabatt_path)
+targets::tar_invalidate(input_betriebskosten_path)
+targets::tar_invalidate(input_sap_path)
+
+# Record output count BEFORE
 output_before <- length(list.files("output", pattern = "^bu_v.*\\.csv$"))
 
 # Run pipeline

@@ -40,12 +40,12 @@ get_next_output_version <- function() {
 targets::tar_config_set(store = "_targets", script = "_targets.R")
 
 # ============================================================================
-# PIPELINE
+# PIPELINE (OHNE tar_files - direkt mit format = "file")
 # ============================================================================
 
 list(
   # ─────────────────────────────────────────────────────────────────────
-  # STAGE 1: INPUT FILES (einfach - nur 1 Target, kein branching)
+  # STAGE 1: INPUT FILES (format = "file" tracked automatisch)
   # ─────────────────────────────────────────────────────────────────────
   
   tar_target(

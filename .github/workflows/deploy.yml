@@ -1,0 +1,34 @@
+name: Deploy to Posit Connect
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.2'
+      
+      - name: Install dependencies
+        run: |
+          install.packages("rsconnect")
+          renv::restore()
+        shell: Rscript {0}
+      
+      - name: Deploy to Posit Connect
+        run: |
+          rsconnect::deployApp(
+            appDir = getwd(),
+            appName = "budget-hochrechnung",
+            server = "connect.posit.cloud",
+            forceUpdate = TRUE,
+            account = "${{ secrets.POSIT_ACCOUNT }}",
+            token = "${{ secrets.POSIT_TOKEN }}"
+          )
+        shell: Rscript {0}
