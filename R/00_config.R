@@ -15,6 +15,9 @@ OUTPUT_DIR <- "output"
 
 VALID_PRODUCTS <- c("Amb_T", "Amb_S", "Amb_C", "Hosp_P", "Hosp_HP")
 
+# Alias für Kompatibilität (wird in generate_dummy_data.R verwendet)
+products <- VALID_PRODUCTS
+
 # ============================================================================
 # Input-Dateien und deren Spaltendefinition
 # ============================================================================
