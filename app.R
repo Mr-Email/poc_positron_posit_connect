@@ -6,6 +6,8 @@ library(readr)
 library(ggplot2)
 library(tidyr)
 library(pointblank)
+library(targets)
+library(visNetwork)
 
 source("R/00_config.R")
 source("R/01_load_data.R")
@@ -149,6 +151,28 @@ ui <- page_navbar(
         )
       )
     )
+  ),
+  
+  # TAB 5: STATUS - PIPELINE VISNETWORK
+  nav_panel(
+    "Status",
+    layout_sidebar(
+      sidebar = sidebar(
+        h4("Pipeline"),
+        actionButton("btn_refresh_network", "🔄 Aktualisieren",
+                     class = "btn-primary w-100 mb-2"),
+        actionButton("btn_reset_targets", "⚠️ Reset Pipeline Cache",
+                     class = "btn-warning w-100 mb-3"),
+        hr(),
+        h5("Pipeline Info"),
+        textOutput("pipeline_info")
+      ),
+      
+      card(
+        card_header("🔗 Pipeline Struktur (Targets)"),
+        visNetworkOutput("visnetwork_plot", height = "600px")
+      )
+    )
   )
 )
 
@@ -167,7 +191,8 @@ server <- function(input, output, session) {
     report_html = NULL,
     validation_agents = NULL,
     validation_success = NULL,
-    validation_reports = NULL
+    validation_reports = NULL,
+    pipeline_data = NULL
   )
   
   # Injiziere CSS für Theme-Force-Update
@@ -691,6 +716,86 @@ server <- function(input, output, session) {
       rv$status <- paste("❌ Fehler:", e$message)
       showNotification(paste("Fehler:", e$message), type = "error")
       cat(glue::glue("[VALIDATION ERROR] {e$message}\n"))
+    })
+  })
+  
+  # ========== BUTTON: REFRESH NETWORK ==========
+  observeEvent(input$btn_refresh_network, {
+    cat("[PIPELINE] Benutzer aktualisiert Visnetwork\n")
+    output$visnetwork_plot <- renderVisNetwork({
+      generate_visnetwork()
+    })
+    showNotification("✅ Pipeline aktualisiert!", type = "message", duration = 2)
+  })
+  
+  # ========== GENERATE VISNETWORK ==========
+  generate_visnetwork <- function() {
+    tryCatch({
+      # Lade Pipeline Daten
+      pipeline_data <- tar_visnetwork(targets_only = TRUE, allow = NULL)
+      
+      # Gebe Visnetwork aus
+      pipeline_data %>%
+        visNodes(font = list(size = 14)) %>%
+        visEdges(arrows = "to", smooth = list(type = "continuous")) %>%
+        visPhysics(enabled = TRUE, stabilization = list(iterations = 200)) %>%
+        visOptions(
+          nodesIdSelection = TRUE
+        ) %>%
+        visLayout(randomSeed = 123)
+      
+    }, error = function(e) {
+      cat(glue::glue("[PIPELINE ERROR] {e$message}\n"))
+      visNetwork::visNetwork(
+        nodes = data.frame(id = 1, label = paste("Fehler:", e$message), title = e$message),
+        edges = data.frame(from = c(), to = c())
+      )
+    })
+  }
+  
+  # ========== OUTPUT: VISNETWORK ==========
+  output$visnetwork_plot <- renderVisNetwork({
+    generate_visnetwork()
+  })
+  
+  # ========== OUTPUT: PIPELINE INFO ==========
+  output$pipeline_info <- renderText({
+    tryCatch({
+      manifest <- tar_manifest()
+      
+      glue::glue(
+        "Targets: {nrow(manifest)}\n",
+        "Zuletzt aktualisiert: {format(Sys.time(), '%H:%M:%S')}"
+      )
+    }, error = function(e) {
+      "Pipeline Info nicht verfügbar"
+    })
+  })
+  
+  # ========== BUTTON: RESET TARGETS ==========
+  observeEvent(input$btn_reset_targets, {
+    showModal(modalDialog(
+      title = "Pipeline Cache löschen?",
+      "Dies wird alle gecachten Targets löschen und neu berechnet.",
+      footer = tagList(
+        modalButton("Abbrechen"),
+        actionButton("confirm_reset", "Bestätigen", class = "btn-danger")
+      )
+    ))
+  })
+  
+  observeEvent(input$confirm_reset, {
+    cat("[PIPELINE] Benutzer setzt Pipeline zurück\n")
+    removeModal()
+    
+    tryCatch({
+      targets::tar_destroy()
+      cat("[PIPELINE] Pipeline Cache gelöscht\n")
+      showNotification("✅ Pipeline Cache gelöscht. Beim nächsten tar_make() neu berechnet.",
+                       type = "message", duration = 5)
+      rv$status <- "⚠️ Pipeline Cache gelöscht"
+    }, error = function(e) {
+      showNotification(paste("Fehler:", e$message), type = "error")
     })
   })
 }

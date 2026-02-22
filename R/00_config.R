@@ -101,53 +101,37 @@ KPI_TARGETS <- list(
 )
 
 # ============================================================================
-# Parameterbereich für Dummy-Datengenerierung
+# FUNCTIONS - Nicht als globale Variablen definieren!
 # ============================================================================
 
-# Hochrechnung
-BESTAND_MIN <- 50000
-BESTAND_MAX <- 500000  # Erhöht von 300000 auf 500000
-
-# Betrag pro Versicherte
-BVP_MIN <- 150
-BVP_MAX <- 300
-
-# Rabatten
-MJ_RAB_RANGE <- c(1, 5)     # Mehrjährig-Rabatt %
-FAM_RAB_RANGE <- c(5, 10)   # Familienrabatt %
-RAB_TOTAL_MAX <- 100        # Max. Gesamtrabatt
-
-# Betriebskosten Parameter
-SM_MIN <- 0.5
-SM_MAX <- 1.5
-BK_MIN <- 5
-
-# SAP Daten
-ADVO_RANGE <- c(0, 5)
-PD_RANGE <- c(0, 5)
-SAP_RANGE <- c(0, 5)
-
-# ============================================================================
-# Versionierung für Datei-Tracking
-# ============================================================================
+get_config <- function() {
+  # Config für Dummy-Datengenerierung
+  list(
+    bestand_min = 50000,
+    bestand_max = 500000,
+    bvp_min = 150,
+    bvp_max = 300,
+    mj_rab_range = c(1, 5),
+    fam_rab_range = c(5, 10),
+    rab_total_max = 100,
+    sm_min = 0.5,
+    sm_max = 1.5,
+    bk_min = 5,
+    advo_range = c(0, 5),
+    pd_range = c(0, 5),
+    sap_range = c(0, 5)
+  )
+}
 
 get_latest_version <- function(input_name) {
-  # Hilfsfunktion um neueste Versionsnummer einer Input-Datei zu finden
   pattern <- glue::glue("^{input_name}_v(\\d+)\\.csv$")
   files <- list.files(DATA_DIR, pattern = pattern)
-  
   if (length(files) == 0) return(NA)
-  
   versions <- stringr::str_extract(files, "\\d+") |> as.numeric()
   max(versions, na.rm = TRUE)
 }
 
 get_next_version <- function(pattern) {
-  # Findet nächste verfügbare Versionsnummer
   latest <- get_latest_version(pattern)
-  if (is.na(latest)) {
-    return(1)
-  } else {
-    return(latest + 1)
-  }
+  if (is.na(latest)) 1 else latest + 1
 }
