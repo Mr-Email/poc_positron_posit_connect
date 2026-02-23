@@ -1,0 +1,6 @@
+Hochrechnung: v004
+Rabatt: v004
+Betriebskosten: v004
+SAP: v004
+Generated: 2026-02-23 08:24:18
+UUID: 3117bcb9-c14f-4dfc-b27e-28971435ae1d

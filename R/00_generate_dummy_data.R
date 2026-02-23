@@ -93,3 +93,21 @@ cat(glue::glue("   Hochrechnung: v{sprintf('%03d', v_hochrechnung)}\n"))
 cat(glue::glue("   Rabatt: v{sprintf('%03d', v_rabatt)}\n"))
 cat(glue::glue("   Betriebskosten: v{sprintf('%03d', v_betriebskosten)}\n"))
 cat(glue::glue("   SAP: v{sprintf('%03d', v_sap)}\n"))
+
+# ============================================================================
+# UPDATE VERSION MARKER (für targets Cache-Invalidation)
+# ============================================================================
+
+marker_content <- glue::glue(
+  "Hochrechnung: v{sprintf('%03d', v_hochrechnung)}\n",
+  "Rabatt: v{sprintf('%03d', v_rabatt)}\n",
+  "Betriebskosten: v{sprintf('%03d', v_betriebskosten)}\n",
+  "SAP: v{sprintf('%03d', v_sap)}\n",
+  "Generated: {format(Sys.time(), '%Y-%m-%d %H:%M:%S')}\n",
+  "UUID: {uuid::UUIDgenerate()}"
+)
+
+dir.create("data", showWarnings = FALSE)
+writeLines(marker_content, "data/version_marker.txt")
+
+cat(glue::glue("✅ Version Marker aktualisiert\n"))

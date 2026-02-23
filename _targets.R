@@ -45,17 +45,51 @@ targets::tar_config_set(store = "_targets", script = "_targets.R")
 
 list(
   # ─────────────────────────────────────────────────────────────────────
+  # STAGE 0: VERSION MARKER (Trigger für Cache-Invalidation)
+  # ─────────────────────────────────────────────────────────────────────
+  
+  tar_target(
+    version_marker_file,
+    {
+      marker_file <- "data/version_marker.txt"
+      
+      # Erstelle Marker-Datei mit UUID, falls sie nicht existiert
+      if (!file.exists(marker_file)) {
+        if (!dir.exists("data")) {
+          dir.create("data", showWarnings = FALSE)
+        }
+        uuid <- paste0("initial_", format(Sys.time(), "%Y%m%d_%H%M%S"))
+        writeLines(uuid, marker_file)
+      }
+      
+      marker_file
+    },
+    format = "file"
+  ),
+  
+  tar_target(
+    version_marker,
+    readLines(version_marker_file) |> paste(collapse = "\n")
+  ),
+  
+  # ─────────────────────────────────────────────────────────────────────
   # STAGE 1: INPUT FILES (Versionsnummer als Trigger)
   # ─────────────────────────────────────────────────────────────────────
   
   tar_target(
     input_hochrechnung_path,
     {
-      # Extrahiere aktuelle Version - ändert sich → Target invalidiert
+      # version_marker als Trigger
+      .marker <- version_marker
+      
+      # Extrahiere aktuelle Version
       version <- max(as.numeric(gsub(".*v(\\d{3})\\.csv", "\\1",
         list.files("data/raw", pattern = "^Input_Hochrechnung_v\\d{3}\\.csv$"))), 0)
       
-      get_latest_input_path("Input_Hochrechnung")
+      # Nutze version um sicherzustellen, dass sie in den Hash eingeht
+      path <- get_latest_input_path("Input_Hochrechnung")
+      glue::glue("{path}?v={version}")  # Füge Version zur Abhängigkeit hinzu
+      path  # Return den tatsächlichen Pfad
     },
     format = "file"
   ),
@@ -63,10 +97,13 @@ list(
   tar_target(
     input_rabatt_path,
     {
+      .marker <- version_marker
       version <- max(as.numeric(gsub(".*v(\\d{3})\\.csv", "\\1",
         list.files("data/raw", pattern = "^Input_Rabatt_v\\d{3}\\.csv$"))), 0)
       
-      get_latest_input_path("Input_Rabatt")
+      path <- get_latest_input_path("Input_Rabatt")
+      glue::glue("{path}?v={version}")
+      path
     },
     format = "file"
   ),
@@ -74,10 +111,13 @@ list(
   tar_target(
     input_betriebskosten_path,
     {
+      .marker <- version_marker
       version <- max(as.numeric(gsub(".*v(\\d{3})\\.csv", "\\1",
         list.files("data/raw", pattern = "^Input_Betriebskosten_v\\d{3}\\.csv$"))), 0)
       
-      get_latest_input_path("Input_Betriebskosten")
+      path <- get_latest_input_path("Input_Betriebskosten")
+      glue::glue("{path}?v={version}")
+      path
     },
     format = "file"
   ),
@@ -85,10 +125,13 @@ list(
   tar_target(
     input_sap_path,
     {
+      .marker <- version_marker
       version <- max(as.numeric(gsub(".*v(\\d{3})\\.csv", "\\1",
         list.files("data/raw", pattern = "^Input_SAP_v\\d{3}\\.csv$"))), 0)
       
-      get_latest_input_path("Input_SAP")
+      path <- get_latest_input_path("Input_SAP")
+      glue::glue("{path}?v={version}")
+      path
     },
     format = "file"
   ),
@@ -108,12 +151,17 @@ list(
   
   tar_target(
     inputs_combined,
-    list(
-      hochrechnung = hochrechnung,
-      rabatt = rabatt,
-      betriebskosten = betriebskosten,
-      sap = sap
-    )
+    {
+      # version_marker als explizite Abhängigkeit für Cache-Invalidation
+      .marker <- version_marker
+      
+      list(
+        hochrechnung = hochrechnung,
+        rabatt = rabatt,
+        betriebskosten = betriebskosten,
+        sap = sap
+      )
+    }
   ),
   
   # ─────────────────────────────────────────────────────────────────────
